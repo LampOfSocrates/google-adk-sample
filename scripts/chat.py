@@ -10,7 +10,13 @@ import asyncio
 import os
 import sys
 
-# Make `import weather_agent` work when run from the repo root.
+import certifi
+
+# Stray SSL_CERT_FILE on this box breaks the HTTPS clients; force certifi.
+os.environ["SSL_CERT_FILE"] = certifi.where()
+os.environ.pop("SSL_CERT_DIR", None)
+
+# Make `import apps.travel_planner` work when run from the repo root.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from dotenv import load_dotenv
@@ -20,9 +26,9 @@ load_dotenv()
 from google.adk.runners import InMemoryRunner  # noqa: E402  (after load_dotenv)
 from google.genai import types  # noqa: E402
 
-from weather_agent.agent import root_agent  # noqa: E402
+from apps.travel_planner.agent import root_agent  # noqa: E402
 
-APP = "weather_agent"
+APP = "travel_planner"
 
 
 async def main():
