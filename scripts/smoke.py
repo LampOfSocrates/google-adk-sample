@@ -102,7 +102,9 @@ def _pdf():
 
 
 def _write_artifact(model_id):
-    path = os.path.join(REPO_ROOT, f"smoke_{BACKEND}_results.txt")
+    results_dir = os.path.join(REPO_ROOT, "tests", "smoke-results")
+    os.makedirs(results_dir, exist_ok=True)
+    path = os.path.join(results_dir, f"{BACKEND}.txt")
     stamp = datetime.datetime.now().isoformat(timespec="seconds")
     passed = sum(1 for _, s, _, _ in RESULTS if s == "PASS")
     lines = [
