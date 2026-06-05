@@ -1,12 +1,19 @@
 """Phase 1 — single agent + one tool. Live: confirms the model actually calls
 get_weather and relays both the success and error paths.
 
-Live tests need LLM_BACKEND=gemini (+ GOOGLE_API_KEY). Run with:
-    LLM_BACKEND=gemini pytest -m live
+Live tests pick their backend via --backend (default gemini). Run with:
+    pytest -m live                      # gemini
+    pytest -m live --backend deepseek   # DeepSeek (needs DEEPSEEK_KEY in .env)
 """
-import pytest
+import os
 
-from apps.travel_planner.agent import root_agent
+# Re-assert the live backend right before the agent binds its model, so the
+# offline modules' LLM_BACKEND=mock (set during collection) can't reach us.
+os.environ["LLM_BACKEND"] = os.environ.get("LIVE_BACKEND", "gemini")
+
+import pytest  # noqa: E402
+
+from apps.travel_planner.agent import root_agent  # noqa: E402
 
 pytestmark = pytest.mark.live
 

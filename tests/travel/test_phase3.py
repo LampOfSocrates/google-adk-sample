@@ -1,9 +1,14 @@
 """Phase 3 — web search via AgentTool. Live: confirms the root agent delegates
 to the search specialist and grounds its answer in real results.
 """
-import pytest
+import os
 
-from apps.travel_planner.agent import root_agent
+# Re-assert the live backend before the agent binds its model (see test_phase1).
+os.environ["LLM_BACKEND"] = os.environ.get("LIVE_BACKEND", "gemini")
+
+import pytest  # noqa: E402
+
+from apps.travel_planner.agent import root_agent  # noqa: E402
 
 pytestmark = pytest.mark.live
 

@@ -17,3 +17,6 @@ venv/
 # OS
 Thumbs.db
 .DS_Store
+
+# Vendored real demo for L0 integration (pulled by scripts/vendor_demo_system.ps1)
+tests/fixtures/online_boutique/

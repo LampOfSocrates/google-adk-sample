@@ -27,14 +27,18 @@ class Provider(str, Enum):
 # alternatives, with a note on how they compare to that default.
 MODEL_CHOICES: dict[Provider, list[str]] = {
     Provider.GEMINI: [
-        "gemini-2.5-flash-lite",  # default: cheapest, largest free-tier daily quota; ample for tool-calling
-        "gemini-2.5-flash",       # smarter, but smaller free quota and more $/token
-        "gemini-2.5-pro",         # most capable; slowest + priciest — overkill for these samples
+        # Free tier covers only Flash / Flash-Lite; Pro is paid-only since 2026-04-01.
+        "gemini-2.5-flash-lite",   # default: cheapest, proven free-tier daily quota; ample for tool-calling
+        "gemini-3.1-flash-lite",   # newer Flash-Lite, frontier-class at low cost (if enabled for your key)
+        "gemini-3.5-flash",        # stronger + balanced; smaller free quota, more $/token
+        "gemini-3.1-pro-preview",  # most capable; PAID-ONLY, slowest + priciest — overkill for these samples
     ],
     Provider.OPENAI: [
-        "openai/gpt-4o-mini",     # default: cheap, fast, solid tool use
-        "openai/gpt-4o",          # stronger general reasoning, ~15-20x the price
-        "openai/o4-mini",         # reasoning model: better at multi-step, higher latency + cost
+        # gpt-4o(-mini) are legacy now; the current line is GPT-5.x.
+        "openai/gpt-5.4-mini",   # default: cheap, fast, solid tool use
+        "openai/gpt-5.4-nano",   # cheapest + fastest, least capable
+        "openai/gpt-5.5",        # flagship: strongest reasoning, ~7x mini's price
+        "openai/o4-mini",        # reasoning model: better at multi-step, higher latency + cost
     ],
     Provider.DEEPSEEK: [
         # V4 line. The old deepseek-chat / deepseek-reasoner names are deprecated

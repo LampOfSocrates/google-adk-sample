@@ -1,0 +1,130 @@
+{
+  "_note": "Golden L0 output for fake_system. Tests should match components/edges on (type, value, confidence_tier) and treat `scanned_at` and the :line suffix of evidence as advisory (normalize before diffing). See ../README.md for the row-by-row mapping.",
+  "scope": [
+    "repo:auth-service",
+    "repo:checkout",
+    "repo:orders",
+    "repo:libs/common-utils",
+    "iac:infra"
+  ],
+  "scanned_at": "2026-06-05T00:00:00Z",
+  "components": [
+    {
+      "provisional_id": "auth-service",
+      "name_candidates": ["auth-service", "auth"],
+      "kind": "service",
+      "anchors": [
+        { "type": "repo", "value": "auth-service", "evidence": "auth-service/package.json:2", "confidence_tier": "strong" },
+        { "type": "path", "value": "auth-service", "evidence": "auth-service/Dockerfile:1", "confidence_tier": "verified" },
+        { "type": "k8s_workload", "value": "auth-service", "evidence": "auth-service/k8s/deployment.yaml:2", "confidence_tier": "verified" },
+        { "type": "service_identity", "value": "acme/auth-service:1.0", "evidence": "auth-service/k8s/deployment.yaml:18", "confidence_tier": "verified" }
+      ]
+    },
+    {
+      "provisional_id": "checkout",
+      "name_candidates": ["checkout"],
+      "kind": "service",
+      "anchors": [
+        { "type": "repo", "value": "checkout", "evidence": "checkout/pyproject.toml:2", "confidence_tier": "strong" },
+        { "type": "path", "value": "checkout", "evidence": "checkout/Dockerfile:1", "confidence_tier": "verified" },
+        { "type": "k8s_workload", "value": "checkout", "evidence": "checkout/k8s/deployment.yaml:2", "confidence_tier": "verified" },
+        { "type": "service_identity", "value": "acme/checkout:1.0", "evidence": "checkout/k8s/deployment.yaml:18", "confidence_tier": "verified" }
+      ]
+    },
+    {
+      "provisional_id": "orders",
+      "name_candidates": ["orders"],
+      "kind": "service",
+      "anchors": [
+        { "type": "repo", "value": "github.com/acme/orders", "evidence": "orders/go.mod:1", "confidence_tier": "strong" },
+        { "type": "path", "value": "orders", "evidence": "orders/Dockerfile:1", "confidence_tier": "verified" },
+        { "type": "k8s_workload", "value": "orders", "evidence": "orders/k8s/deployment.yaml:2", "confidence_tier": "verified" },
+        { "type": "service_identity", "value": "acme/orders:1.0", "evidence": "orders/k8s/deployment.yaml:18", "confidence_tier": "verified" }
+      ]
+    },
+    {
+      "provisional_id": "orders-db",
+      "name_candidates": ["orders-db", "orders_db"],
+      "kind": "datastore",
+      "anchors": [
+        { "type": "db_instance", "value": "orders-db", "evidence": "infra/main.tf:4", "confidence_tier": "verified" }
+      ]
+    },
+    {
+      "provisional_id": "checkout-db",
+      "name_candidates": ["checkout-db", "checkout_db"],
+      "kind": "datastore",
+      "anchors": [
+        { "type": "db_instance", "value": "checkout-db", "evidence": "infra/main.tf:12", "confidence_tier": "verified" }
+      ]
+    },
+    {
+      "provisional_id": "order-events",
+      "name_candidates": ["order-events"],
+      "kind": "queue",
+      "anchors": [
+        { "type": "topic", "value": "order-events", "evidence": "checkout/k8s/deployment.yaml:30", "confidence_tier": "strong" }
+      ]
+    },
+    {
+      "provisional_id": "payments",
+      "name_candidates": ["payments"],
+      "kind": "external",
+      "anchors": [
+        { "type": "naming", "value": "http://payments.internal:7000", "evidence": "checkout/app/main.py:28", "confidence_tier": "inferred" }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from_provisional_id": "checkout",
+      "to_provisional_id": "auth-service",
+      "type": "calls",
+      "anchors": [
+        { "evidence": "checkout/k8s/deployment.yaml:22", "confidence_tier": "strong" }
+      ]
+    },
+    {
+      "from_provisional_id": "checkout",
+      "to_provisional_id": "orders",
+      "type": "calls",
+      "anchors": [
+        { "evidence": "checkout/k8s/deployment.yaml:24", "confidence_tier": "strong" }
+      ]
+    },
+    {
+      "from_provisional_id": "checkout",
+      "to_provisional_id": "checkout-db",
+      "type": "writes_to",
+      "anchors": [
+        { "evidence": "checkout/k8s/deployment.yaml:27", "confidence_tier": "strong" },
+        { "evidence": "checkout/alembic/versions/0001_init.py:1", "confidence_tier": "strong" }
+      ]
+    },
+    {
+      "from_provisional_id": "orders",
+      "to_provisional_id": "orders-db",
+      "type": "writes_to",
+      "anchors": [
+        { "evidence": "orders/k8s/deployment.yaml:21", "confidence_tier": "strong" },
+        { "evidence": "orders/migrations/0001_init.sql:1", "confidence_tier": "strong" }
+      ]
+    },
+    {
+      "from_provisional_id": "checkout",
+      "to_provisional_id": "order-events",
+      "type": "writes_to",
+      "anchors": [
+        { "evidence": "checkout/k8s/deployment.yaml:30", "confidence_tier": "strong" }
+      ]
+    },
+    {
+      "from_provisional_id": "checkout",
+      "to_provisional_id": "payments",
+      "type": "depends_on",
+      "anchors": [
+        { "evidence": "checkout/app/main.py:28", "confidence_tier": "inferred" }
+      ]
+    }
+  ]
+}

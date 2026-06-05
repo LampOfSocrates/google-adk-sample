@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: checkout
+  labels:
+    app: checkout
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: checkout
+  template:
+    metadata:
+      labels:
+        app: checkout
+    spec:
+      containers:
+        - name: checkout
+          image: acme/checkout:1.0
+          ports:
+            - containerPort: 8000
+          env:
+            # cross-service refs (k8s Service DNS) -> calls edges
+            - name: AUTH_SERVICE_URL
+              value: "http://auth-service:8080"
+            - name: ORDERS_URL
+              value: "http://orders:9090"
+            # datastore binding -> writes_to checkout-db
+            - name: DATABASE_URL
+              value: "postgres://checkout@checkout-db:5432/checkout"
+            # queue/topic ref -> writes_to order-events
+            - name: KAFKA_TOPIC
+              value: "order-events"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: checkout
+spec:
+  selector:
+    app: checkout
+  ports:
+    - port: 8000
+      targetPort: 8000

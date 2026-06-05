@@ -127,6 +127,51 @@ def _wants_json(req: LlmRequest) -> bool:
     return mime == "application/json" or getattr(cfg, "response_schema", None) is not None
 
 
+def _schema_name(req: LlmRequest) -> str:
+    """Name of the output_schema, so JSON branches stay mutually exclusive when
+    several agents use controlled generation (text_to_diagram vs graph_builder)."""
+    cfg = getattr(req, "config", None)
+    s = getattr(cfg, "response_schema", None) if cfg else None
+    if s is None:
+        return ""
+    return getattr(s, "__name__", None) or getattr(s, "title", "") or ""
+
+
+# graph_builder stage 1: pull "namey" tokens (hyphenated ids, CamelCase) out of
+# the turn as surface entities. The mock can't truly extract, but real inputs use
+# such names, so this is enough to drive the pipeline offline.
+_NAMEY = re.compile(r"\b([a-z][a-z0-9]*(?:-[a-z0-9]+)+|[A-Z][A-Za-z0-9]+)\b")
+# Common capitalized words that aren't components — keeps the offline demo legible.
+_STOP = {"The", "Its", "It", "During", "Another", "Subject", "We", "Re", "HTTP", "Http"}
+
+
+def _last_user_text(contents) -> str:
+    """Raw last user message, WITHOUT the `_is_synthetic` filter — graph_builder's
+    `[source]` provenance tags start with '[', which that filter would skip."""
+    for content in reversed(contents or []):
+        if getattr(content, "role", None) == "user":
+            for part in content.parts or []:
+                if getattr(part, "text", None):
+                    return part.text
+    return ""
+
+
+def _mock_mentions(text: str) -> str:
+    body = re.sub(r"^\s*\[[^\]]+\]\s*", "", text or "")  # drop the [source] tag
+    names: list[str] = []
+    for m in _NAMEY.finditer(body):
+        name = m.group(1)
+        if name not in names and name not in _STOP:
+            names.append(name)
+    if not names:
+        names = ["component"]
+    entities = [
+        {"name": n, "kind": "service", "claims": [body] if i == 0 else []}
+        for i, n in enumerate(names)
+    ]
+    return json.dumps({"entities": entities, "relations": []})
+
+
 def _first_sql_table(fr) -> str:
     """Pull the first table name out of a list_sql_schema tool response."""
     r = fr.response if isinstance(fr.response, dict) else {}
@@ -161,8 +206,19 @@ class MockLlm(BaseLlm):
         low = user_text.lower()
 
         # --- controlled generation: the agent set an output_schema (JSON) ---
-        # e.g. text_to_diagram's triad_extractor. Return canned, schema-shaped JSON.
         if _wants_json(req):
+            schema = _schema_name(req)
+            # graph_builder stage 1: surface entities from this turn's text.
+            if schema == "MentionList":
+                raw = _last_user_text(req.contents)
+                return self._log("mentions_json", _text_part(_mock_mentions(raw)))
+            # graph_builder stage 2 (the moat): the mock CANNOT resolve, so it
+            # returns no resolutions — the grapher's fallback then makes every
+            # entity a NEW node. That all-new outcome is wrong-split, on purpose:
+            # it shows why the real resolution test needs LLM_BACKEND=gemini.
+            if schema == "ResolutionList":
+                return self._log("resolutions_json", _text_part('{"resolutions": []}'))
+            # text_to_diagram's triad_extractor: canned, schema-shaped triads.
             return self._log("triads_json", _text_part(json.dumps(_CANNED_TRIADS)))
 
         # --- a tool just returned ---------------------------------------------

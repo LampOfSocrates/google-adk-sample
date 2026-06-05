@@ -2,9 +2,19 @@
 (no API, no quota) to prove the state logic; the live test proves state really
 persists across turns through the model.
 """
-import pytest
+import os
 
-from apps.travel_planner.agent import get_weather, root_agent, set_preferred_units
+# The live test below binds the agent's model at import; re-assert the live
+# backend (set by conftest from --backend) so the offline modules can't clobber it.
+os.environ["LLM_BACKEND"] = os.environ.get("LIVE_BACKEND", "gemini")
+
+import pytest  # noqa: E402
+
+from apps.travel_planner.agent import (  # noqa: E402
+    get_weather,
+    root_agent,
+    set_preferred_units,
+)
 
 
 class _Ctx:

@@ -1,0 +1,17 @@
+[project]
+name = "checkout"
+version = "1.0.0"
+description = "Checkout orchestration service."
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn>=0.29",
+    "sqlalchemy>=2.0",
+    "alembic>=1.13",
+    "confluent-kafka>=2.3",
+    "common-utils",          # internal library dependency (see ../libs/common-utils)
+]
+
+# A console entrypoint that boots a server => SERVICE, not a library.
+[project.scripts]
+checkout = "app.main:main"

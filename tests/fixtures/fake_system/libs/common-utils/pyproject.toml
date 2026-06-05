@@ -1,0 +1,12 @@
+# NEGATIVE CASE. This is a LIBRARY, not a service:
+#   - no [project.scripts] entrypoint
+#   - no server framework dependency
+#   - no Dockerfile, no k8s manifest, no workload
+# L0 must detect it as a code unit but emit NO service component for it. If a
+# `common-utils` node shows up in the snapshot, the service-vs-lib parser is wrong.
+[project]
+name = "common-utils"
+version = "0.3.0"
+description = "Shared helpers (logging, ids). Imported by other services."
+requires-python = ">=3.11"
+dependencies = ["structlog>=24.1"]

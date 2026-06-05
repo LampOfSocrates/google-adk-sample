@@ -6,7 +6,40 @@ a small suite of agent-backed apps: **Travel Planning Chat**, **PDF Insight**, a
 **Text-to-Diagram**.
 
 Run the agents locally with `adk web` (dev UI + debugger) or `python scripts/chat.py`
-(terminal REPL). See `.env.example` for backend selection (`mock` / `gemini` / `bedrock`).
+(terminal REPL). See `.env.example` for backend selection
+(`mock` / `gemini` / `openai` / `deepseek` / `bedrock`).
+
+---
+
+## Testing
+
+```bash
+pytest -m "not live"        # fast, offline — runs on MockLlm, no API/quota (default for CI)
+pytest                      # everything (live tests hit a real LLM)
+pytest -m live              # only the live tests, on Gemini (default backend)
+```
+
+**Live tests against a real LLM.** Pick the backend with `--backend` — no env-var
+juggling, and it works across the whole suite (the offline tests stay on mock):
+
+```bash
+pytest -m live --backend deepseek    # DeepSeek  (needs DEEPSEEK_KEY in .env)
+pytest -m live --backend openai      # OpenAI    (needs OPENAI_KEY)
+pytest -m live --backend gemini      # Gemini    (needs GOOGLE_API_KEY; this is the default)
+```
+
+On Windows PowerShell, invoke pytest via the venv:
+`.venv\Scripts\python.exe -m pytest -m live --backend deepseek -v`
+
+How it works: the agent binds its model **at import**, so `conftest.py` freezes the
+`--backend` choice (in `LIVE_BACKEND`) before collection, and each live test module
+re-applies it just before importing its agent. That's why a live run is immune to the
+offline modules that force `LLM_BACKEND=mock` at import. openai/deepseek/bedrock route
+through ADK's LiteLlm wrapper — `pip install "google-adk[extensions]"`.
+
+> Note: `test_phase3` (web search) asserts on a `google_search` result, which only runs
+> on Gemini; other backends get the offline `web_search` stand-in. Use `test_phase1`/
+> `test_phase2` as the clean cross-backend smoke tests.
 
 ---
 
