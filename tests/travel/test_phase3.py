@@ -1,9 +1,9 @@
 """Phase 3 — web search via AgentTool. Live: confirms the root agent delegates
-to the google_search sub-agent and grounds its answer in real results.
+to the search specialist and grounds its answer in real results.
 """
 import pytest
 
-from weather_agent.agent import root_agent
+from apps.travel_planner.agent import root_agent
 
 pytestmark = pytest.mark.live
 

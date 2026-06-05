@@ -1,9 +1,12 @@
 """Phase 1 — single agent + one tool. Live: confirms the model actually calls
 get_weather and relays both the success and error paths.
+
+Live tests need LLM_BACKEND=gemini (+ GOOGLE_API_KEY). Run with:
+    LLM_BACKEND=gemini pytest -m live
 """
 import pytest
 
-from weather_agent.agent import root_agent
+from apps.travel_planner.agent import root_agent
 
 pytestmark = pytest.mark.live
 

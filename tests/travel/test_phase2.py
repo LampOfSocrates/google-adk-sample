@@ -4,7 +4,7 @@ persists across turns through the model.
 """
 import pytest
 
-from weather_agent.agent import get_weather, root_agent, set_preferred_units
+from apps.travel_planner.agent import get_weather, root_agent, set_preferred_units
 
 
 class _Ctx:

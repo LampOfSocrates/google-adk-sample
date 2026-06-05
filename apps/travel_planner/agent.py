@@ -1,25 +1,28 @@
-import os
+"""Travel-planner app: a coordinator that routes to specialist agents.
 
-import certifi
+ADK idioms demonstrated here (read before changing the topology):
 
-# A stray SSL_CERT_FILE/SSL_CERT_DIR in the shell can point at a cert file that
-# doesn't exist, which makes the Google client crash while building its SSL
-# context. Force the bundled certifi CA file (we know it exists) before any
-# google.* import creates that context.
-os.environ["SSL_CERT_FILE"] = certifi.where()
-os.environ.pop("SSL_CERT_DIR", None)
+  * Function tool  -> a plain Python function (get_weather, set_preferred_units).
+        Deterministic logic the agent *calls*. Returns a {"status": ...} dict.
+  * Sub-agent      -> weather_agent is listed in `sub_agents`. The coordinator
+        TRANSFERS control to it; it then drives the conversation until done.
+        Only agents whose tools are all transfer-safe can be sub-agents.
+  * AgentTool      -> search_agent is wrapped in AgentTool and listed in `tools`.
+        The coordinator CALLS it like a function and gets the result back, never
+        ceding control. We must use AgentTool (not sub_agents) for the search
+        specialist because ADK forbids a *built-in* tool (google_search) inside a
+        sub-agent. That sub-agent-vs-AgentTool contrast is the whole point here.
+
+Backend awareness: google_search is Gemini-only, so on every non-Gemini backend
+(mock, openai, deepseek, bedrock) we swap in the offline `web_search` stand-in.
+`root_agent` is what ADK discovers.
+"""
+from shared.model import get_model, is_gemini
+from shared.mock_llm import web_search
 
 from google.adk.agents import Agent
-from google.adk.tools import ToolContext
+from google.adk.tools import ToolContext, google_search
 from google.adk.tools.agent_tool import AgentTool
-
-from .model import get_model, get_search_tool
-
-# Single place to swap the model. Chosen by LLM_BACKEND in .env:
-# mock (default, free/offline) | gemini (API quota) | bedrock (AWS). See model.py.
-# One shared instance feeds all three agents below.
-MODEL = get_model()
-
 
 # Store raw data so we can format it in whichever units the user prefers.
 _WEATHER_DB = {
@@ -81,7 +84,7 @@ def get_weather(city: str, tool_context: ToolContext) -> dict:
 # --- Specialist 1: weather. Plain function tools, so it can be a true sub-agent. ---
 weather_agent = Agent(
     name="weather_agent",
-    model=MODEL,
+    model=get_model(),
     description="Handles weather lookups and temperature-unit preferences.",
     instruction=(
         "You answer weather questions. Call get_weather with the city name. "
@@ -93,19 +96,19 @@ weather_agent = Agent(
 )
 
 
-# --- Specialist 2: web search. The real google_search is a BUILT-IN tool, and
-# ADK forbids built-in tools inside a sub-agent — so this one is reached via
-# AgentTool, not sub_agents. That contrast (sub-agent vs. AgentTool) is the point
-# of Phase 4. Offline backends swap in a function-tool stand-in (see model.py). ---
+# --- Specialist 2: web search. google_search is a BUILT-IN tool (Gemini only),
+# and ADK forbids built-in tools inside a sub-agent — so this one is reached via
+# AgentTool, not sub_agents. Only Gemini can run google_search; every other
+# backend gets the offline web_search stand-in. ---
 search_agent = Agent(
     name="search_agent",
-    model=MODEL,
+    model=get_model(),
     description="Searches the web for current, general information.",
     instruction=(
-        "You are a web search specialist. Use the search tool to find current, "
+        "You are a web search specialist. Use your search tool to find current, "
         "factual information and return a concise answer."
     ),
-    tools=[get_search_tool()],
+    tools=[google_search] if is_gemini() else [web_search],
 )
 
 
@@ -114,7 +117,7 @@ search_agent = Agent(
 # calling search_agent (an AgentTool). ADK looks for `root_agent` in this file. ---
 root_agent = Agent(
     name="coordinator",
-    model=MODEL,
+    model=get_model(),
     description="Top-level travel assistant that routes to specialist agents.",
     instruction=(
         "You are a travel assistant coordinator; you do not answer directly. "

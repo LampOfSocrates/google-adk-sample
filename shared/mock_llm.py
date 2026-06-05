@@ -1,18 +1,24 @@
-"""A zero-cost, offline stand-in for a real LLM.
+"""A zero-cost, offline stand-in for a real LLM, shared by every app.
 
 `MockLlm` implements ADK's `BaseLlm` interface, so an `Agent(model=MockLlm())`
-runs the full Runner loop — tool calls, sub-agent transfers, session state —
-without ever touching the network or spending a token.
+runs the full Runner loop — tool calls, sub-agent transfers, session state,
+controlled-generation output schemas — without ever touching the network or
+spending a token.
 
 It is *heuristic*, not a real model: it inspects which tools the current agent
-has available (ADK passes them in `llm_request.tools_dict`) to figure out which
-agent it is standing in for, then returns a plausible function call or final
-text. That's enough to keep building and exercising the agent graph while you
-have no API quota. For exact, scripted replies in a test, pass `replies=[...]`
-(consumed in order for the turns that would otherwise produce free-text).
+has available (ADK passes them in `llm_request.tools_dict`) plus the request
+config to figure out which agent it is standing in for, then returns a plausible
+function call or final text. That is enough to exercise the whole agent graph
+offline. For exact, scripted replies in a test, pass `replies=[...]` (consumed in
+order for turns that would otherwise produce free text).
+
+When you add a new app, add a branch here so its agents have believable offline
+behavior. Keep each branch keyed on a *distinguishing tool name* or a request
+feature (e.g. a JSON output schema) so branches stay mutually exclusive.
 """
 from __future__ import annotations
 
+import json
 import re
 from typing import AsyncGenerator
 
@@ -26,6 +32,16 @@ from google.genai import types
 _KNOWN_CITIES = ("london", "tokyo", "new york")
 _WEATHER_WORDS = ("weather", "temperature", "forecast", "hot", "cold", "rain")
 _UNIT_WORDS = ("celsius", "fahrenheit", "°c", "°f", "units", "unit")
+
+# Canned triads returned for any controlled-generation (output_schema) request.
+# France appears as both an object and a subject on purpose, so the mermaid
+# renderer's node de-duplication is exercised by the pipeline test.
+_CANNED_TRIADS = {
+    "triads": [
+        {"subject": "Paris", "predicate": "capital of", "object": "France"},
+        {"subject": "France", "predicate": "located in", "object": "Europe"},
+    ]
+}
 
 
 def web_search(query: str) -> dict:
@@ -102,11 +118,29 @@ def _summarize_tool_result(fr) -> str:
     return str(r) if r else "Done."
 
 
+def _wants_json(req: LlmRequest) -> bool:
+    """True when the agent set an output_schema (controlled generation)."""
+    cfg = getattr(req, "config", None)
+    if cfg is None:
+        return False
+    mime = getattr(cfg, "response_mime_type", None)
+    return mime == "application/json" or getattr(cfg, "response_schema", None) is not None
+
+
+def _first_sql_table(fr) -> str:
+    """Pull the first table name out of a list_sql_schema tool response."""
+    r = fr.response if isinstance(fr.response, dict) else {}
+    schema = r.get("schema") or []
+    if schema and isinstance(schema[0], dict):
+        return schema[0].get("table", "t1")
+    return "t1"
+
+
 class MockLlm(BaseLlm):
     """Deterministic, network-free LLM for offline development.
 
     Set `LLM_BACKEND=mock` (the default) to use it everywhere via the model
-    factory in `weather_agent.model`.
+    factory in `shared.model`.
     """
 
     model: str = "mock"
@@ -126,11 +160,31 @@ class MockLlm(BaseLlm):
         user_text, fr = _current_turn(req.contents)
         low = user_text.lower()
 
-        # A tool (other than a transfer) just returned -> wrap it up as the
-        # final answer. Transfers are control-flow, not data, so we skip them
-        # and let the freshly-activated agent take its turn instead.
+        # --- controlled generation: the agent set an output_schema (JSON) ---
+        # e.g. text_to_diagram's triad_extractor. Return canned, schema-shaped JSON.
+        if _wants_json(req):
+            return self._log("triads_json", _text_part(json.dumps(_CANNED_TRIADS)))
+
+        # --- a tool just returned ---------------------------------------------
         if fr is not None and fr.name != "transfer_to_agent":
+            # Text2SQL: after we learn the schema, issue a read-only SELECT.
+            if fr.name == "list_sql_schema":
+                table = _first_sql_table(fr)
+                return self._log(
+                    "run_sql",
+                    _call_part("run_sql", {"query": f"SELECT * FROM {table} LIMIT 5"}),
+                )
+            # Any other tool result -> wrap it up as the final answer. Transfers
+            # are control-flow, not data, so they're skipped (handled below).
             return self._log("summarize", _text_part(_summarize_tool_result(fr)))
+
+        # --- I am the Text2SQL specialist: start by inspecting the schema ---
+        if "list_sql_schema" in available:
+            return self._log("list_sql_schema", _call_part("list_sql_schema", {}))
+
+        # --- I am a PDF table agent: pull the tables, then answer from them ---
+        if "extract_tables" in available:
+            return self._log("extract_tables", _call_part("extract_tables", {}))
 
         weatherish = (
             any(w in low for w in _WEATHER_WORDS)
