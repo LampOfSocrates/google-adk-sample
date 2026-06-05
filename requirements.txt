@@ -1,3 +1,4 @@
 google-adk[extensions]
 pdfplumber
 python-dotenv
+boto3  # only needed for LLM_BACKEND=bedrock (LiteLLM uses it for AWS auth)

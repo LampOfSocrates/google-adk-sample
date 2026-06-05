@@ -2,6 +2,7 @@
 tests can `import weather_agent`, and loads the .env so live tests get the key.
 """
 import asyncio
+import os
 
 import pytest
 from dotenv import load_dotenv
@@ -11,6 +12,33 @@ from google.genai import types
 load_dotenv()
 
 APP_NAME = "weather_agent"
+
+
+def pytest_addoption(parser):
+    """`--backend` chooses the LLM for live tests without remembering env vars.
+
+        pytest -m live --backend deepseek
+
+    The offline tests (diagram/pdf) force LLM_BACKEND=mock at import, which would
+    clobber a shell LLM_BACKEND set for live runs. So we stash the live choice in
+    a SEPARATE var (LIVE_BACKEND) that those modules never touch; the live test
+    modules read it back just before importing their agent.
+    """
+    parser.addoption(
+        "--backend",
+        default=None,
+        help="LLM backend for live tests: gemini|openai|deepseek|bedrock "
+        "(default: gemini, or the current LLM_BACKEND if already non-mock).",
+    )
+
+
+def pytest_configure(config):
+    """Freeze the live backend BEFORE any test module is imported (and thus
+    before the offline modules set LLM_BACKEND=mock during collection)."""
+    chosen = config.getoption("--backend") or os.environ.get("LLM_BACKEND", "")
+    if chosen.strip().lower() in ("", "mock"):
+        chosen = "gemini"
+    os.environ["LIVE_BACKEND"] = chosen
 
 
 async def _ask(runner, session_id, text, retries=4):
@@ -34,6 +62,23 @@ async def _ask(runner, session_id, text, retries=4):
                 await asyncio.sleep(20)
             else:
                 raise
+
+
+@pytest.fixture(autouse=True)
+def _backend_env(request, monkeypatch):
+    """Pin LLM_BACKEND per test so the suite is hermetic.
+
+    Test modules mutate this global at import time (offline -> mock, live -> the
+    live backend). With randomized collection order, whichever module imports
+    last would otherwise decide the *runtime* value for every test — which flakes
+    any agent that reads the backend at run time (e.g. pdf_insight's native-PDF
+    refusal). Agents bind their model at import; this only fixes runtime reads.
+    """
+    live = request.node.get_closest_marker("live")
+    monkeypatch.setenv(
+        "LLM_BACKEND",
+        os.environ.get("LIVE_BACKEND", "gemini") if live else "mock",
+    )
 
 
 @pytest.fixture

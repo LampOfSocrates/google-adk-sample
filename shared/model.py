@@ -24,6 +24,8 @@ since openai/deepseek/bedrock are also non-Gemini and can't run those tools.
 """
 import os
 
+from .model_choices import Provider, default_model
+
 
 def backend() -> str:
     """The active backend name, lower-cased. 'mock' when unset."""
@@ -43,6 +45,17 @@ def is_gemini() -> bool:
     or function-tool stand-in instead.
     """
     return backend() == "gemini"
+
+
+def supports_output_schema() -> bool:
+    """True when the backend honors ADK's output_schema (controlled generation).
+
+    Gemini does it natively; MockLlm simulates it. The LiteLLM providers
+    (openai/deepseek/bedrock) are routed through a prompt+parse fallback instead:
+    DeepSeek and Bedrock/Anthropic reject schema-constrained `response_format`
+    outright, and asking for JSON + validating it works uniformly everywhere.
+    """
+    return backend() in ("gemini", "mock")
 
 
 def _first_env(*names: str):
@@ -79,27 +92,24 @@ def get_model():
         return MockLlm()
 
     if b == "gemini":
-        # flash-lite has a larger free-tier daily quota than gemini-2.5-flash.
-        return os.environ.get("GEMINI_MODEL", "gemini-2.5-flash-lite")
+        return os.environ.get("GEMINI_MODEL", default_model(Provider.GEMINI))
 
     if b == "openai":
         # Accept either the LiteLLM-standard name or a plain OPENAI_KEY.
         return _lite_llm(
-            os.environ.get("OPENAI_MODEL", "openai/gpt-4o-mini"),
+            os.environ.get("OPENAI_MODEL", default_model(Provider.OPENAI)),
             api_key=_first_env("OPENAI_API_KEY", "OPENAI_KEY"),
         )
 
     if b == "deepseek":
         return _lite_llm(
-            os.environ.get("DEEPSEEK_MODEL", "deepseek/deepseek-chat"),
+            os.environ.get("DEEPSEEK_MODEL", default_model(Provider.DEEPSEEK)),
             api_key=_first_env("DEEPSEEK_API_KEY", "DEEPSEEK_KEY"),
         )
 
     if b == "bedrock":
         return _lite_llm(
-            os.environ.get(
-                "BEDROCK_MODEL", "bedrock/anthropic.claude-3-5-sonnet-20240620-v1:0"
-            )
+            os.environ.get("BEDROCK_MODEL", default_model(Provider.BEDROCK))
         )
 
     raise ValueError(
