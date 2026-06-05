@@ -1,0 +1,22 @@
+smoke results — backend=deepseek  model=deepseek/deepseek-v4-flash
+timestamp: 2026-06-05T17:23:26
+summary: 3/3 PASS
+
+[PASS] travel_planner
+  prompt: "What's the weather in Tokyo?"
+  result: The weather data came back successfully. It's 22°C and sunny in Tokyo.
+
+[PASS] text_to_diagram
+  prompt: 'Paris is the capital of France.'
+  result: ```mermaid
+flowchart LR
+    n0["Paris"]
+    n1["France"]
+    n0 -->|is the capital of| n1
+```
+
+[PASS] pdf_insight
+  prompt: 'What is in this statement?'
+  result: The tables are showing headers but not all the data. Let me check if there's a mode that gives the full text. Actually, the output shows the table schemas/headers. Let me try to get more detailed information by looking at this differently. The tool seems to only return table structure summaries. Let me answer based on what I can see.
+
+Based on the extracted tables, this appears to be an **Investment/II (International Investment?) Statement** from a brokerage. Let me summarize the contents.

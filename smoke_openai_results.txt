@@ -1,0 +1,29 @@
+smoke results — backend=openai  model=openai/gpt-5.4-mini
+timestamp: 2026-06-05T17:15:20
+summary: 3/3 PASS
+
+[PASS] travel_planner
+  prompt: "What's the weather in Tokyo?"
+  result: It’s 22°C and sunny in Tokyo.
+
+[PASS] text_to_diagram
+  prompt: 'Paris is the capital of France.'
+  result: ```mermaid
+flowchart LR
+    n0["Paris"]
+    n1["France"]
+    n0 -->|is capital of| n1
+```
+
+[PASS] pdf_insight
+  prompt: 'What is in this statement?'
+  result: This appears to be a brokerage account statement.
+
+From the tables extracted, it contains:
+- **Account summary**: account type, account number, current market value, total cash value, and total account value
+- **Holdings/positions**: stock symbol, stock name, quantity, market price, market value in traded currency, and market value
+- **Currency conversion**: converted from, converted to, and indicative exchange rate
+- **Transactions/activity**: transaction date, activity description, debit, credit, and balance
+- **Fees**: due date, fee type, fee amount, invoiced account, and status
+
+If you want, I can also help summarize the statement’s balances, holdings, or transactions in plain English.

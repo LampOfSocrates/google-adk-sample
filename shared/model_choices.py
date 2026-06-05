@@ -28,9 +28,9 @@ class Provider(str, Enum):
 MODEL_CHOICES: dict[Provider, list[str]] = {
     Provider.GEMINI: [
         # Free tier covers only Flash / Flash-Lite; Pro is paid-only since 2026-04-01.
-        "gemini-2.5-flash-lite",   # default: cheapest, proven free-tier daily quota; ample for tool-calling
-        "gemini-3.1-flash-lite",   # newer Flash-Lite, frontier-class at low cost (if enabled for your key)
-        "gemini-3.5-flash",        # stronger + balanced; smaller free quota, more $/token
+        "gemini-3.1-flash-lite",   # default: newer Flash-Lite — cheap, free-tier, reliable with tools + multi-agent (smoke 3/3)
+        "gemini-2.5-flash-lite",   # cheapest/largest free quota, but botches multi-agent tool summaries (empty/<ctrl> finals)
+        "gemini-3.5-flash",        # stronger + balanced; smaller free quota, more $/token (was 503-overloaded at test time)
         "gemini-3.1-pro-preview",  # most capable; PAID-ONLY, slowest + priciest — overkill for these samples
     ],
     Provider.OPENAI: [

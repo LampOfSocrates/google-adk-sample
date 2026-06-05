@@ -1,0 +1,48 @@
+smoke results — backend=bedrock  model=bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0
+timestamp: 2026-06-05T17:23:39
+summary: 3/3 PASS
+
+[PASS] travel_planner
+  prompt: "What's the weather in Tokyo?"
+  result: It's **22°C and sunny** in Tokyo! Lovely weather for exploring the city.
+
+[PASS] text_to_diagram
+  prompt: 'Paris is the capital of France.'
+  result: ```mermaid
+flowchart LR
+    n0["Paris"]
+    n1["France"]
+    n0 -->|is capital of| n1
+```
+
+[PASS] pdf_insight
+  prompt: 'What is in this statement?'
+  result: Based on the extracted tables, this is an **II Statement** (Investment/Brokerage Statement) that contains:
+
+1. **Brokerage Services Summary** (Page 1)
+   - Account Type and Number
+   - Current Market Value
+   - Total Cash Value
+   - Total Account Value
+
+2. **Stock Holdings** (Page 2)
+   - Stock Symbol and Name
+   - Quantity held
+   - Market Price
+   - Market Value in traded currency and converted to base currency
+
+3. **Currency Exchange Information** (Page 2)
+   - Exchange rates showing conversions between currencies
+
+4. **Transaction History** (Pages 2-3)
+   - Multiple transaction records with dates, descriptions
+   - Debit and Credit columns
+   - Running balance
+
+5. **Account Fees** (Page 3)
+   - Due dates
+   - Fee types
+   - Fee amounts
+   - Invoiced account details
+   - Status of fees
+

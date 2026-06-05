@@ -8,15 +8,20 @@ entity is an EXISTING node under a different surface name, or a new one.
 
 Three stages (a stateful SequentialAgent):
 
-  1 extractor  LlmAgent(output_schema=MentionList) -> state["mentions"].
-               Pulls entities + relations from this turn's text, as WRITTEN
-               (surface names, no resolution).
+  1 extractor  LlmAgent -> state["mentions_raw"] (a JSON string). Pulls entities
+               + relations from this turn's text, as WRITTEN (surface names, no
+               resolution).
 
-  2 resolver   LlmAgent(output_schema=ResolutionList) -> state["resolutions"].
-               THE MOAT. Its instruction is a *callable* that injects the current
-               graph's nodes + this turn's mentions, so it resolves each mention
-               against what already exists: attach-to-node-X vs new, with
-               confidence + reason (explainable, overridable).
+  2 resolver   LlmAgent -> state["resolutions_raw"] (a JSON string). THE MOAT.
+               Its instruction is a *callable* that injects the current graph's
+               nodes + this turn's mentions, so it resolves each mention against
+               what already exists: attach-to-node-X vs new, with confidence +
+               reason (explainable, overridable).
+
+We ask for JSON in the prompt and parse it ourselves rather than binding ADK's
+`output_schema`. output_schema forces strict structured outputs (response_format
+type=json_schema), which Gemini/OpenAI accept but DeepSeek rejects ("response_format
+type is unavailable"). Prompt-and-parse keeps every backend working.
 
   3 grapher    BaseAgent (deterministic). Applies the resolutions to the
                persistent graph — merges aliases, accretes claims WITH provenance
@@ -30,11 +35,11 @@ demonstrates wrong-split and is exactly why the real test needs LLM_BACKEND=gemi
 """
 from __future__ import annotations
 
+import json
 import re
 from typing import AsyncGenerator
 
 from shared.model import get_model
-from shared.schemas import MentionList, ResolutionList
 
 from google.adk.agents import BaseAgent, LlmAgent, SequentialAgent
 from google.adk.agents.invocation_context import InvocationContext
@@ -43,6 +48,26 @@ from google.adk.events import Event, EventActions
 from google.genai import types
 
 from .render import render_graph
+
+
+def _loads(text: str, default):
+    """Parse a model's JSON reply, tolerating ```json fences and surrounding prose."""
+    if not text:
+        return default
+    s = text.strip()
+    if s.startswith("```"):
+        s = re.sub(r"^```[a-zA-Z]*\n?", "", s)
+        s = re.sub(r"\n?```$", "", s).strip()
+    try:
+        return json.loads(s)
+    except Exception:  # noqa: BLE001 - fall back to grabbing the first {...} block
+        m = re.search(r"\{.*\}", s, re.DOTALL)
+        if m:
+            try:
+                return json.loads(m.group(0))
+            except Exception:  # noqa: BLE001
+                return default
+        return default
 
 
 # --- stage 1: extract surface mentions from this turn ---------------------
@@ -55,11 +80,15 @@ extractor = LlmAgent(
         "systems) and the relationships between them from the user's text. Use the "
         "names EXACTLY as written — do NOT canonicalize or merge; that happens later. "
         "If the message begins with a [source] tag, ignore the tag itself. For each "
-        "entity, capture the facts the text asserts about it as separate claims. "
-        "Return JSON only."
+        "entity, capture the facts the text asserts about it as separate claims.\n"
+        "Return ONLY a JSON object (no prose, no markdown fences) of this shape:\n"
+        '{"entities": [{"name": "<as written>", "kind": '
+        '"service|datastore|queue|job|external|unknown", "claims": ["<fact>", ...]}], '
+        '"relations": [{"source_name": "<as written>", "predicate": '
+        '"calls|depends_on|reads_from|writes_to", "target_name": "<as written>"}]}\n'
+        "Always include both keys, even if a list is empty."
     ),
-    output_schema=MentionList,
-    output_key="mentions",
+    output_key="mentions_raw",
 )
 
 
@@ -82,7 +111,7 @@ def _resolver_instruction(ctx: ReadonlyContext) -> str:
     else:
         existing = "EXISTING NODES: (none yet — first turn)"
 
-    entities = (ctx.state.get("mentions") or {}).get("entities", [])
+    entities = _loads(ctx.state.get("mentions_raw", ""), {"entities": []}).get("entities", [])
     if entities:
         rows = [f'  - "{e["name"]}" (kind={e.get("kind", "unknown")})' for e in entities]
         to_resolve = "ENTITIES TO RESOLVE (this turn):\n" + "\n".join(rows)
@@ -102,7 +131,11 @@ def _resolver_instruction(ctx: ReadonlyContext) -> str:
         "propose a clean canonical_name. Always give a 0-1 confidence and a one-line "
         "reason citing the evidence for your decision.\n\n"
         f"{existing}\n\n{to_resolve}\n\n"
-        "Return a ResolutionList with exactly one resolution per entity to resolve."
+        "Return ONLY a JSON object (no prose, no markdown fences) of this shape, with "
+        "exactly one resolution per entity to resolve:\n"
+        '{"resolutions": [{"mention_name": "<echo>", "decision": "attach|new", '
+        '"node_id": "<existing id or null>", "canonical_name": "<name>", '
+        '"confidence": 0.0, "reason": "<one line>"}]}'
     )
 
 
@@ -111,8 +144,7 @@ resolver = LlmAgent(
     model=get_model(),
     description="Resolves each mention to an existing node or a new one (the moat).",
     instruction=_resolver_instruction,
-    output_schema=ResolutionList,
-    output_key="resolutions",
+    output_key="resolutions_raw",
 )
 
 
@@ -155,10 +187,12 @@ class GrapherAgent(BaseAgent):
         turn = graph["turn"] + 1
         source = _source_of(_latest_user_text(ctx)) or f"turn{turn}"
 
-        mentions = state.get("mentions") or {}
+        mentions = _loads(state.get("mentions_raw", ""), {"entities": [], "relations": []})
         entities = mentions.get("entities", [])
         relations = mentions.get("relations", [])
-        resolutions = (state.get("resolutions") or {}).get("resolutions", [])
+        resolutions = _loads(state.get("resolutions_raw", ""), {"resolutions": []}).get(
+            "resolutions", []
+        )
 
         claims_by_name = {e["name"]: e.get("claims", []) for e in entities}
         kind_by_name = {e["name"]: e.get("kind", "unknown") for e in entities}

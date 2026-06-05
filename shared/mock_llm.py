@@ -145,6 +145,28 @@ _NAMEY = re.compile(r"\b([a-z][a-z0-9]*(?:-[a-z0-9]+)+|[A-Z][A-Za-z0-9]+)\b")
 _STOP = {"The", "Its", "It", "During", "Another", "Subject", "We", "Re", "HTTP", "Http"}
 
 
+def _request_text(req: LlmRequest) -> str:
+    """All instruction/context text in the request (system instruction + contents).
+
+    graph_builder's extractor/resolver no longer set an output_schema (DeepSeek
+    rejects strict schemas), so the mock can't key on the schema name — it keys on
+    a distinctive phrase from each agent's instruction instead."""
+    out: list[str] = []
+    cfg = getattr(req, "config", None)
+    si = getattr(cfg, "system_instruction", None) if cfg else None
+    if isinstance(si, str):
+        out.append(si)
+    elif si is not None:
+        for p in getattr(si, "parts", None) or []:
+            if getattr(p, "text", None):
+                out.append(p.text)
+    for c in req.contents or []:
+        for p in getattr(c, "parts", None) or []:
+            if getattr(p, "text", None):
+                out.append(p.text)
+    return "\n".join(out)
+
+
 def _last_user_text(contents) -> str:
     """Raw last user message, WITHOUT the `_is_synthetic` filter — graph_builder's
     `[source]` provenance tags start with '[', which that filter would skip."""
@@ -204,21 +226,22 @@ class MockLlm(BaseLlm):
         available = set((req.tools_dict or {}).keys())
         user_text, fr = _current_turn(req.contents)
         low = user_text.lower()
+        rtext = _request_text(req)
+
+        # --- graph_builder stage 2 (the moat): the mock CANNOT resolve, so it
+        # returns no resolutions — the grapher's fallback then makes every entity
+        # a NEW node. That all-new outcome is wrong-split, on purpose: it shows
+        # why the real resolution test needs a real backend (gemini/deepseek). ---
+        if "entity RESOLVER" in rtext:
+            return self._log("gb_resolver", _text_part('{"resolutions": []}'))
+        # --- graph_builder stage 1: surface entities from this turn's text. ---
+        if "Extract the system components" in rtext:
+            raw = _last_user_text(req.contents)
+            return self._log("gb_extractor", _text_part(_mock_mentions(raw)))
 
         # --- controlled generation: the agent set an output_schema (JSON) ---
+        # text_to_diagram's triad_extractor. Return canned, schema-shaped triads.
         if _wants_json(req):
-            schema = _schema_name(req)
-            # graph_builder stage 1: surface entities from this turn's text.
-            if schema == "MentionList":
-                raw = _last_user_text(req.contents)
-                return self._log("mentions_json", _text_part(_mock_mentions(raw)))
-            # graph_builder stage 2 (the moat): the mock CANNOT resolve, so it
-            # returns no resolutions — the grapher's fallback then makes every
-            # entity a NEW node. That all-new outcome is wrong-split, on purpose:
-            # it shows why the real resolution test needs LLM_BACKEND=gemini.
-            if schema == "ResolutionList":
-                return self._log("resolutions_json", _text_part('{"resolutions": []}'))
-            # text_to_diagram's triad_extractor: canned, schema-shaped triads.
             return self._log("triads_json", _text_part(json.dumps(_CANNED_TRIADS)))
 
         # --- a tool just returned ---------------------------------------------

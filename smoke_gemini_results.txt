@@ -1,0 +1,26 @@
+smoke results — backend=gemini  model=gemini-3.1-flash-lite
+timestamp: 2026-06-05T17:22:37
+summary: 3/3 PASS
+
+[PASS] travel_planner
+  prompt: "What's the weather in Tokyo?"
+  result: The weather in Tokyo is currently 22°C and sunny.
+
+[PASS] text_to_diagram
+  prompt: 'Paris is the capital of France.'
+  result: ```mermaid
+flowchart LR
+    n0["Paris"]
+    n1["France"]
+    n0 -->|is the capital of| n1
+```
+
+[PASS] pdf_insight
+  prompt: 'What is in this statement?'
+  result: This document appears to be a financial or brokerage statement. Based on the tables extracted, it contains the following sections:
+
+*   **Account Summary (Page 1):** Provides an overview of the account, including the account type, account number, current market value, total cash value, and total account value.
+*   **Holdings (Page 2):** Details of the stocks held, including stock symbols, names, quantities, market prices, and market values.
+*   **Currency Conversion (Page 2):** Information regarding currency conversions, including the original and target currencies and the exchange rate used.
+*   **Transaction History (Pages 2-3):** A record of account activities, listing dates, descriptions, debits, credits, and the running balance.
+*   **Fees (Page 3):** A list of fees, including due dat
