@@ -8,20 +8,20 @@ entity is an EXISTING node under a different surface name, or a new one.
 
 Three stages (a stateful SequentialAgent):
 
-  1 extractor  LlmAgent -> state["mentions_raw"] (a JSON string). Pulls entities
-               + relations from this turn's text, as WRITTEN (surface names, no
-               resolution).
+  1 extractor  LlmAgent -> state["mentions"]. Pulls entities + relations from this
+               turn's text, as WRITTEN (surface names, no resolution).
 
-  2 resolver   LlmAgent -> state["resolutions_raw"] (a JSON string). THE MOAT.
-               Its instruction is a *callable* that injects the current graph's
-               nodes + this turn's mentions, so it resolves each mention against
-               what already exists: attach-to-node-X vs new, with confidence +
-               reason (explainable, overridable).
+  2 resolver   LlmAgent -> state["resolutions"]. THE MOAT. Its instruction is a
+               *callable* that injects the current graph's nodes + this turn's
+               mentions, so it resolves each mention against what already exists:
+               attach-to-node-X vs new, with confidence + reason (explainable,
+               overridable).
 
-We ask for JSON in the prompt and parse it ourselves rather than binding ADK's
-`output_schema`. output_schema forces strict structured outputs (response_format
-type=json_schema), which Gemini/OpenAI accept but DeepSeek rejects ("response_format
-type is unavailable"). Prompt-and-parse keeps every backend working.
+Structured output is backend-conditional (see shared.supports_output_schema): on
+native backends (gemini/mock) the two LlmAgents bind ADK's canonical `output_schema`
+and state holds a validated object; on LiteLLM providers (openai/deepseek/bedrock),
+which reject strict schemas, they instead ask for JSON in the prompt and state holds
+a raw string. `_as_obj` reads either form, so stages 2 and 3 are path-agnostic.
 
   3 grapher    BaseAgent (deterministic). Applies the resolutions to the
                persistent graph — merges aliases, accretes claims WITH provenance
@@ -39,7 +39,8 @@ import json
 import re
 from typing import AsyncGenerator
 
-from shared.model import get_model
+from shared.model import get_model, supports_output_schema
+from shared.schemas import MentionList, ResolutionList
 
 from google.adk.agents import BaseAgent, LlmAgent, SequentialAgent
 from google.adk.agents.invocation_context import InvocationContext
@@ -48,6 +49,12 @@ from google.adk.events import Event, EventActions
 from google.genai import types
 
 from .render import render_graph
+
+# Native backends (gemini/mock) take ADK's canonical output_schema path; LiteLLM
+# providers (openai/deepseek/bedrock) reject strict schemas, so they fall back to
+# prompt-for-JSON + _loads. Same instructions/keys either way — only the transport
+# differs, so downstream code stays identical via _as_obj().
+_STRUCTURED = supports_output_schema()
 
 
 def _loads(text: str, default):
@@ -70,6 +77,20 @@ def _loads(text: str, default):
         return default
 
 
+def _as_obj(val, default):
+    """Read a stage's output regardless of path: a validated dict/model (canonical
+    output_schema) or a raw JSON string (prompt+parse fallback)."""
+    if val is None:
+        return default
+    if hasattr(val, "model_dump"):
+        return val.model_dump()
+    if isinstance(val, dict):
+        return val
+    if isinstance(val, str):
+        return _loads(val, default)
+    return default
+
+
 # --- stage 1: extract surface mentions from this turn ---------------------
 extractor = LlmAgent(
     name="mention_extractor",
@@ -88,7 +109,8 @@ extractor = LlmAgent(
         '"calls|depends_on|reads_from|writes_to", "target_name": "<as written>"}]}\n'
         "Always include both keys, even if a list is empty."
     ),
-    output_key="mentions_raw",
+    output_key="mentions",
+    **({"output_schema": MentionList} if _STRUCTURED else {}),
 )
 
 
@@ -111,7 +133,7 @@ def _resolver_instruction(ctx: ReadonlyContext) -> str:
     else:
         existing = "EXISTING NODES: (none yet — first turn)"
 
-    entities = _loads(ctx.state.get("mentions_raw", ""), {"entities": []}).get("entities", [])
+    entities = _as_obj(ctx.state.get("mentions"), {"entities": []}).get("entities", [])
     if entities:
         rows = [f'  - "{e["name"]}" (kind={e.get("kind", "unknown")})' for e in entities]
         to_resolve = "ENTITIES TO RESOLVE (this turn):\n" + "\n".join(rows)
@@ -144,7 +166,8 @@ resolver = LlmAgent(
     model=get_model(),
     description="Resolves each mention to an existing node or a new one (the moat).",
     instruction=_resolver_instruction,
-    output_key="resolutions_raw",
+    output_key="resolutions",
+    **({"output_schema": ResolutionList} if _STRUCTURED else {}),
 )
 
 
@@ -187,10 +210,10 @@ class GrapherAgent(BaseAgent):
         turn = graph["turn"] + 1
         source = _source_of(_latest_user_text(ctx)) or f"turn{turn}"
 
-        mentions = _loads(state.get("mentions_raw", ""), {"entities": [], "relations": []})
+        mentions = _as_obj(state.get("mentions"), {"entities": [], "relations": []})
         entities = mentions.get("entities", [])
         relations = mentions.get("relations", [])
-        resolutions = _loads(state.get("resolutions_raw", ""), {"resolutions": []}).get(
+        resolutions = _as_obj(state.get("resolutions"), {"resolutions": []}).get(
             "resolutions", []
         )
 
