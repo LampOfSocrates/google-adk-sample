@@ -1,4 +1,5 @@
 google-adk[extensions]
 pdfplumber
+duckdb  # local stash for parsed PDF tables (scripts/pdf_to_duckdb.py + SQL mode)
 python-dotenv
 boto3  # only needed for LLM_BACKEND=bedrock (LiteLLM uses it for AWS auth)

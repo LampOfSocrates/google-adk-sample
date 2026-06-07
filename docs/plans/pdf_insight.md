@@ -19,10 +19,10 @@ SQLite ingest, and SQL execution are deterministic tools. Only mode-selection
 |---|---|---|---|
 | `LLM_GETS_ALL_TABLES_AS_TEXT`  | pdfplumber → ALL tables rendered as text → model answers | deterministic extract; LLM answers | any (incl. mock) |
 | `LLM_GETS_PDF_BYTES`           | PDF bytes as multimodal `Part` → Gemini reads doc | model does all | gemini only |
-| `LLM_GIVES_SQL_FROM_TEXT`      | pdfplumber tables → local SQLite → NL→SQL→execute | deterministic ingest/execute; LLM writes SQL | any for ingest/run; LLM for SQL |
+| `LLM_MAKES_SQL_FROM_CHAT`      | pdfplumber tables → local SQLite → NL→SQL→execute | deterministic ingest/execute; LLM writes SQL | any for ingest/run; LLM for SQL |
 | `LLM_GETS_SOME_TABLES_AS_TEXT` | pdfplumber → SELECTED table(s) rendered as text → model | deterministic; LLM answers | any (incl. mock) |
 
-**Scope for first pass:** `LLM_GETS_ALL_TABLES_AS_TEXT`, `LLM_GIVES_SQL_FROM_TEXT`,
+**Scope for first pass:** `LLM_GETS_ALL_TABLES_AS_TEXT`, `LLM_MAKES_SQL_FROM_CHAT`,
 `LLM_GETS_SOME_TABLES_AS_TEXT` (all run under `LLM_BACKEND=mock`).
 `LLM_GETS_PDF_BYTES` is a **later phase** (gemini-only). The coordinator refuses
 `LLM_GETS_PDF_BYTES` under mock with a clear error rather than failing deep.
@@ -32,7 +32,7 @@ Sentinel `auto` = "no mode pinned, let the LLM router decide".
 ## Config resolution (precedence: request > session > env > default)
 ```python
 # apps/pdf_insight/config.py
-MODES = {"LLM_GETS_ALL_TABLES_AS_TEXT","LLM_GETS_PDF_BYTES","LLM_GIVES_SQL_FROM_TEXT",
+MODES = {"LLM_GETS_ALL_TABLES_AS_TEXT","LLM_GETS_PDF_BYTES","LLM_MAKES_SQL_FROM_CHAT",
          "LLM_GETS_SOME_TABLES_AS_TEXT","auto"}
 
 def resolve_mode(request_override, state, env) -> str:
@@ -81,10 +81,17 @@ Rejected for clarity — the custom agent makes the config/reasoning split expli
 ```
 apps/pdf_insight/
   __init__.py        # from . import agent
-  agent.py           # PdfCoordinator, router_agent, dispatch map, root_agent
+  agent.py           # assembles root_agent from coordinator + modes registry
+  coordinator.py     # PdfCoordinator (base agent), router_agent
   config.py          # resolve_mode, MODES, request_override parsing
   tools.py           # extract_tables(select=...), tables_as_text, set_pdf_mode
   sql_tools.py       # ingest_tables_to_sqlite, list_sql_schema, run_sql (SELECT-only)
+  modes/             # one module per PDF mode; build_dispatch() merges them
+    __init__.py      # MODE_BUILDERS registry, build_dispatch()
+    _common.py       # _user_text, _resolve_pdf_path, _parse_table_indices, _text_event
+    tables.py        # TablesAnswerAgent -> ALL_/SOME_TABLES_AS_TEXT
+    sql.py           # SqlModeAgent + text2sql_agent -> SQL_FROM_TEXT
+    native.py        # NativeBytesAgent -> PDF_BYTES (gemini-only placeholder)
 shared/
   pdf.py             # pure pdfplumber helpers (reused by scripts/inspect_pdf.py)
 ```
@@ -97,7 +104,7 @@ shared/
   (header + rows) for the model. Shared by both table-as-text modes.
 - `set_pdf_mode(mode, tool_context) -> {status, message}` (writes session state)
 
-### Text2SQL specialist (`LLM_GIVES_SQL_FROM_TEXT`)
+### Text2SQL specialist (`LLM_MAKES_SQL_FROM_CHAT`)
 ```python
 text2sql_agent = Agent(
     name="text2sql_agent", model=get_model(),

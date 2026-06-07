@@ -4,9 +4,15 @@ Multi-mode PDF Q&A agent: one `PdfCoordinator` (custom `BaseAgent`) routes a
 question to one of four strategies. Full design: `docs/plans/pdf_insight.md`.
 
 ## Boundary (what to touch)
-- This app = `apps/pdf_insight/` (agent, config, tools, sql_tools) + `tests/pdf/`.
+- This app = `apps/pdf_insight/` + `tests/pdf/`. Layout: `agent.py` assembles
+  `root_agent`; `coordinator.py` = base router (`PdfCoordinator`); `modes/` = one
+  module per mode (`tables.py`, `sql.py`, `native.py`, `stash.py`) registered via
+  `modes.build_dispatch()`; `config.py`, `tools.py`, `sql_tools.py`,
+  `duckdb_tools.py` (stash mode) round it out.
 - Only shared deps: `shared/pdf.py` (pdfplumber helpers), `shared/model.py`
   (backend/get_model), and `shared/mock_llm.py` in tests.
+- Stash mode reads `data/pdf_stash.duckdb`, built offline by
+  `scripts/pdf_to_duckdb.py` from the `tests/pdf/samples/` report stash.
 - **Ignore** the sibling apps (`text_to_diagram`, `travel_planner`), `shared/schemas.py`,
   and everything under `docs/cartograph*` / `tests/fixtures/fake_system/` — none are
   dependencies of this app.
@@ -22,7 +28,9 @@ SQL generation call the model.
 
 ## Mode names — use these constants exactly (see `config.py`)
 `LLM_GETS_ALL_TABLES_AS_TEXT` · `LLM_GETS_SOME_TABLES_AS_TEXT` ·
-`LLM_GIVES_SQL_FROM_TEXT` · `LLM_GETS_PDF_BYTES` (gemini-only, placeholder) ·
+`LLM_MAKES_SQL_FROM_CHAT` · `LLM_GETS_PDF_BYTES` (gemini-only, placeholder) ·
+`LLM_QUERIES_STASH` (whole-stash DuckDB across all reports) ·
 `auto` (sentinel: let the LLM router decide).
 
-`run_sql` is the trust boundary: single read-only `SELECT` only.
+Trust boundary: `run_sql` (SQLite, single mode) and `run_stash_sql` (DuckDB stash)
+both accept a single read-only `SELECT`/`WITH` only.

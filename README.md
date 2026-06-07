@@ -1,13 +1,32 @@
 # google-adk-sample
 
-A multi-agent ADK sample. Currently: a travel-planning coordinator (`weather_agent/`)
-that routes to a weather sub-agent and a web-search agent-tool. Intended to grow into
-a small suite of agent-backed apps: **Travel Planning Chat**, **PDF Insight**, and
-**Text-to-Diagram**.
+A multi-agent ADK sample: a small suite of agent-backed apps under `apps/`, sharing
+one model layer (`shared/`) that runs on five interchangeable backends. The newest
+app, **Graph Builder**, is the first slice of **Cartograph** — a self-building
+knowledge graph of a system (see `docs/cartograph-brief.md`).
 
-Run the agents locally with `adk web` (dev UI + debugger) or `python scripts/chat.py`
-(terminal REPL). See `.env.example` for backend selection
-(`mock` / `gemini` / `openai` / `deepseek` / `bedrock`).
+Run the agents locally three ways:
+- `streamlit run streamlit_app.py` — Claude-style product chat UI (thinking blocks,
+  live mermaid render, per-turn debug tab) over the apps.
+- `adk web` — the ADK dev UI + debugger (auto-discovers each `apps/` folder).
+- `python scripts/chat.py` — terminal REPL.
+
+See `.env.example` for backend selection (`mock` / `gemini` / `openai` / `deepseek`
+/ `bedrock`); `mock` is the default — free, offline, no tokens.
+
+---
+
+## Feature status (2026-06-05)
+
+| Feature | State | Notes |
+|---|---|---|
+| **Travel Planner** (`apps/travel_planner`) | ✅ Done | Coordinator → weather sub-agent + web-search agent-tool. `google_search` on gemini; offline `web_search` stand-in elsewhere. |
+| **PDF Insight** (`apps/pdf_insight`) | 🟡 3 of 4 modes | `LLM_GETS_ALL_TABLES_AS_TEXT`, `LLM_MAKES_SQL_FROM_CHAT`, `LLM_GETS_SOME_TABLES_AS_TEXT` done. `LLM_GETS_PDF_BYTES` (gemini native upload) still a guarded placeholder. |
+| **Text-to-Diagram** (`apps/text_to_diagram`) | ✅ Done | Stateless: prose → triads → mermaid. The accreting successor is Graph Builder. |
+| **Graph Builder** (`apps/graph_builder`) | ✅ Resolver slice done | Conversational, *accreting* KG. Stage-2 **resolver** (the moat: attach-vs-new with provenance) implemented; eval set + offline scorer + demo/eval scripts in place. **Grounding is faked** (chat-only, soft claims) to isolate resolution. |
+| **Backends** (5) | ✅ Done | `mock`/`gemini`/`openai`/`deepseek`/`bedrock`, all smoke-tested 3/3 (`tests/smoke-results/`). LiteLLM providers use the prompt+parse fallback (`supports_output_schema()`). |
+| **Streamlit product UI** (`streamlit_app.py`) | 🟡 Built, untracked | Chat over travel_planner / graph_builder / text_to_diagram. **pdf_insight not yet wired in.** New files not yet committed. |
+| **Cartograph L0** (survey/grounding agent) | 📋 Spec + fixture only | `docs/l0-survey-agent.md` spec; golden fixture `tests/fixtures/fake_system/` ready; vendor script for Online Boutique. **No survey agent/tools/test built yet** — the resolver-first pivot deferred it. |
 
 ---
 
@@ -43,10 +62,74 @@ through ADK's LiteLlm wrapper — `pip install "google-adk[extensions]"`.
 
 ---
 
+## PDF test data & stash
+
+Synthetic, multi-table PDFs for testing `pdf_insight` — a multi-region derivatives
+desk risk report (Greeks: delta/gamma/vega/theta/rho), 16 aggregation tables across
+4 pages. Built with reportlab; parsed back with pdfplumber. Seeded → deterministic.
+
+**Generate the PDFs.** One canonical fixture, or a dated weekly stash:
+
+```bash
+# canonical fixture (committed) + golden answers, all 16 tables, seed 42
+python scripts/pdf_creator.py --out tests/fixtures/risk_report.pdf \
+    --golden tests/fixtures/risk_report.golden.json --pages 4 --tables 16 --seed 42
+
+# dated weekly report(s) into tests/pdf/samples/ (seed derived from the date)
+python scripts/weekly_report.py                 # this week's Friday
+python scripts/weekly_report.py --backfill 6    # seed the stash: last 6 Fridays
+```
+
+**Parse them into tables (→ DuckDB).** Scan the stash, extract every table, and land
+it in `data/pdf_stash.duckdb` (each logical table accumulates across weeks, keyed by
+`report_date`):
+
+```bash
+python scripts/pdf_to_duckdb.py --reset                       # (re)build the DB
+python scripts/pdf_to_duckdb.py --query "SELECT table_index, title FROM pdf_tables"
+python scripts/pdf_to_duckdb.py --query \
+    "SELECT report_date, vega_k FROM t00 WHERE region='Americas' AND NOT is_total ORDER BY report_date"
+```
+
+`tests/pdf/samples/*` and `data/pdf_stash.duckdb` are gitignored (regenerable) — run
+the two scripts above whenever you want more data. On Windows PowerShell, invoke via
+the venv, e.g. `.venv\Scripts\python.exe scripts\pdf_to_duckdb.py --reset`.
+
+---
+
 ## DecisionLog
 
 A running record of UI/architecture decisions, what they buy us, and what they cost —
 so future-us (and new contributors) know *why*, not just *what*. Newest first.
+
+### 2026-06-05 — Cartograph: build the **resolver (L1) first**, not the survey (L0)
+
+**Decision.** The Cartograph brief says "build L0 first" (objective grounding is the
+fastest standalone win). We **inverted that** for the first code slice: `graph_builder`
+implements the **entity resolver — the moat — over chat text, with grounding deliberately
+faked** (every claim is soft, provenance-tagged, no verified anchor).
+
+**Why.** L0 is objective but mechanical; the resolver is the hard, differentiating part
+(wrong-split vs over-merge). Faking grounding isolates resolution so we can measure it now
+(`apps/graph_builder/evals.py` scorer; `scripts/graph_eval.py` scorecard) without first
+building the whole scanner crew. On `mock` the resolver can't reason → all-new (wrong-split)
+→ which is exactly the failure the real `gemini` run must fix.
+
+**Cost / what's still owed.** L0 stays unbuilt: the golden fixture
+(`tests/fixtures/fake_system/`) and the `l0-survey-agent.md` spec are ready, but no survey
+agent/tools consume them yet. Until L0 lands, the graph has no clickable ground truth — it's
+a resolution demo, not the full product.
+
+### 2026-06-05 — Streamlit product UI is built (chat pane)
+
+**Decision realized.** The "Streamlit for now" decision below is now **implemented**:
+`streamlit_app.py` is a Claude-style chat over the ADK apps — collapsible Thinking block
+(tool calls + reasoning), token streaming, live mermaid render, and a per-turn Debug tab.
+All ADK contact funnels through `shared/ui_stream.py` (raw events → flat `UIEvent`s);
+`shared/debug.py` backs the debug tab.
+
+**Owed.** Files are not yet committed, and **pdf_insight is not wired into the `APPS` map** —
+it needs its own pane (PDF viewer + mode banner), not just the generic chat surface.
 
 ### 2026-06-05 — UI architecture: one FastAPI server, product UIs as siblings of `adk web`
 

@@ -32,7 +32,7 @@ def test_unknown_pin_is_ignored():
 
 
 def test_parse_request_directive():
-    assert config.parse_request_override("answer in mode: LLM_GIVES_SQL_FROM_TEXT please") == config.SQL_FROM_TEXT
+    assert config.parse_request_override("answer in mode: LLM_MAKES_SQL_FROM_CHAT please") == config.SQL_FROM_TEXT
     assert config.parse_request_override("mode=auto") == config.AUTO
     assert config.parse_request_override("no directive here") is None
     assert config.parse_request_override("mode: not_a_mode") is None

@@ -1,4 +1,4 @@
-"""SQLite ingestion + query tools for the LLM_GIVES_SQL_FROM_TEXT mode.
+"""SQLite ingestion + query tools for the LLM_MAKES_SQL_FROM_CHAT mode.
 
 ADK idiom note on the trust boundary: `run_sql` is the security gate. The model
 writes the SQL, so the *tool* — not the prompt — enforces read-only access. Never
