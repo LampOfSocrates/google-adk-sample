@@ -1,7 +1,7 @@
 """Phase 1 — deterministic PDF extraction. Pure functions, no LLM, no runner."""
 from shared import pdf
 
-PDF = "data/ii_statement.pdf"
+PDF = "tests/fixtures/risk_report.pdf"
 
 
 def test_detects_tables():

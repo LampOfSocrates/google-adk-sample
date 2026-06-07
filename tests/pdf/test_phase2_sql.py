@@ -7,7 +7,7 @@ from apps.pdf_insight.sql_tools import (
     run_sql,
 )
 
-PDF = "data/ii_statement.pdf"
+PDF = "tests/fixtures/risk_report.pdf"
 
 
 class _Ctx:

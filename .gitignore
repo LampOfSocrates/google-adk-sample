@@ -28,3 +28,5 @@ tests/fixtures/online_boutique/
 tests/pdf/samples/*.pdf
 tests/pdf/samples/*.golden.json
 data/pdf_stash.duckdb
+
+.coverage

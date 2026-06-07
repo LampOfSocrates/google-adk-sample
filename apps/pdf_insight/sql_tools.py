@@ -103,7 +103,11 @@ def run_sql(query: str, tool_context: ToolContext) -> dict:
         return {"status": "error", "error_message": "Only a single statement is allowed."}
     if not re.match(r"(?is)^\s*select\b", q):
         return {"status": "error", "error_message": "Only SELECT queries are allowed."}
-    if re.search(r"(?i)\b(insert|update|delete|drop|alter|create|attach|pragma|replace)\b", q):
+    # The SELECT-only prefix + single-statement guards already block every write
+    # STATEMENT (REPLACE INTO / INSERT OR REPLACE can't start a SELECT), so we don't
+    # blocklist bare `replace` — that would also reject the read-only REPLACE() scalar
+    # function, which is the natural way to strip thousands-commas before CAST.
+    if re.search(r"(?i)\b(insert|update|delete|drop|alter|create|attach|pragma)\b", q):
         return {"status": "error", "error_message": "Write/DDL keywords are not allowed."}
 
     conn = sqlite3.connect(db_path)
