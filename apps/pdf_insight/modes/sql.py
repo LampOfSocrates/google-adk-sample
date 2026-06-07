@@ -47,20 +47,27 @@ class SqlModeAgent(BaseAgent):
     async def _run_async_impl(
         self, ctx: InvocationContext
     ) -> AsyncGenerator[Event, None]:
-        path = ctx.session.state.get("pdf_path")
+        state = ctx.session.state
+        path = state.get("pdf_path")
         # Keep the SQLite file out of the source tree — derive it under the OS temp
         # dir from the PDF name so re-runs reuse it but the repo stays clean.
         default_db = os.path.join(tempfile.gettempdir(), os.path.basename(path) + ".sqlite")
-        db_path = ctx.session.state.get("db_path") or default_db
-        if not ctx.session.state.get("db_path"):
+        # Cache the ingested db PER SOURCE PDF: re-ingest whenever the active PDF
+        # changes. Gating only on "db_path exists" would silently answer a new PDF
+        # from the previous document's db after a mid-session switch.
+        if state.get("db_source_pdf") != path:
+            db_path = default_db
             try:
                 ingest_tables_to_sqlite(path, db_path)
             except Exception as e:  # noqa: BLE001
                 yield _text_event(self.name, f"Could not ingest {path}: {e}")
                 return
-            ctx.session.state["db_path"] = db_path  # in-process: tools read it now
-            yield Event(author=self.name,  # persist so ingestion is reused next turn
-                        actions=EventActions(state_delta={"db_path": db_path}))
+            # in-process so the tools read them this turn; state_delta persists them.
+            state["db_path"] = db_path
+            state["db_source_pdf"] = path
+            yield Event(author=self.name,
+                        actions=EventActions(
+                            state_delta={"db_path": db_path, "db_source_pdf": path}))
         async for ev in self.text2sql.run_async(ctx):
             yield ev
 

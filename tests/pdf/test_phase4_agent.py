@@ -60,6 +60,32 @@ async def test_pinned_stash_mode_routes(converse):
     assert answers[-1]  # produced a reply
 
 
+async def test_sql_mode_reingests_when_pdf_changes(run_agent, monkeypatch):
+    """Regression: a mid-session PDF switch must re-ingest, not reuse the stale db.
+
+    State claims an earlier PDF was already ingested (db_path + db_source_pdf set);
+    the active PDF is now the fixture. The old gate (`if not db_path`) skipped
+    ingestion and answered from the previous document.
+    """
+    from apps.pdf_insight.modes import sql as sqlmod
+
+    calls = []
+    real = sqlmod.ingest_tables_to_sqlite
+    monkeypatch.setattr(
+        sqlmod, "ingest_tables_to_sqlite",
+        lambda pdf_path, db_path: (calls.append(pdf_path), real(pdf_path, db_path))[1],
+    )
+
+    fixture = "tests/fixtures/risk_report.pdf"
+    agent = sqlmod.build()[config.SQL_FROM_TEXT]
+    await run_agent(agent, "how many rows?", {
+        "pdf_path": fixture,
+        "db_path": "/tmp/stale_old.pdf.sqlite",
+        "db_source_pdf": "old.pdf",
+    })
+    assert calls == [fixture]  # re-ingested the new PDF, didn't reuse the stale db
+
+
 async def test_native_bytes_mode_refused_under_mock(converse):
     answers, state = await converse(
         root_agent,
