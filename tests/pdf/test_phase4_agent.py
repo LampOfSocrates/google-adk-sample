@@ -39,6 +39,27 @@ async def test_pinned_sql_mode_ingests_and_delegates(converse):
     assert answers[-1]                 # text2sql produced some answer
 
 
+async def test_pinned_some_tables_publishes_table_text(converse):
+    answers, state = await converse(
+        root_agent,
+        [f"mode: {config.SOME_TABLES_AS_TEXT} table 0 holdings"],
+    )
+    assert state["active_pdf_mode"] == config.SOME_TABLES_AS_TEXT
+    assert "Table 0" in state["pdf_tables_text"]
+
+
+async def test_pinned_stash_mode_routes(converse):
+    # Routing-deep only: under the plain MockLlm the stash agent just replies; the
+    # point is the coordinator dispatches to QUERY_STASH without crashing.
+    # (Answer correctness for this mode lives in test_golden_answers.py / MockPdfLlm.)
+    answers, state = await converse(
+        root_agent,
+        [f"mode: {config.QUERY_STASH} total vega by region"],
+    )
+    assert state["active_pdf_mode"] == config.QUERY_STASH
+    assert answers[-1]  # produced a reply
+
+
 async def test_native_bytes_mode_refused_under_mock(converse):
     answers, state = await converse(
         root_agent,

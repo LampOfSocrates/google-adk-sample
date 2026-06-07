@@ -19,17 +19,21 @@ from .. import config
 from ..sql_tools import ingest_tables_to_sqlite, list_sql_schema, run_sql
 from ._common import _text_event
 
-text2sql_agent = LlmAgent(
-    name="text2sql_agent",
-    model=get_model(),
-    description="Writes ONE read-only SQLite SELECT to answer questions over tables.",
-    instruction=(
-        "First call list_sql_schema to see the tables and columns. Then write a "
-        "single SQLite SELECT, call run_sql with it, and answer from the rows. "
-        "Never write or modify data."
-    ),
-    tools=[list_sql_schema, run_sql],
-)
+def _text2sql_agent() -> LlmAgent:
+    """Fresh Text2SQL specialist per call. An ADK agent may attach to only ONE
+    parent, so build() must not reuse a module-level singleton (else a second
+    build() — e.g. in a test — fails with a parent-conflict ValidationError)."""
+    return LlmAgent(
+        name="text2sql_agent",
+        model=get_model(),
+        description="Writes ONE read-only SQLite SELECT to answer questions over tables.",
+        instruction=(
+            "First call list_sql_schema to see the tables and columns. Then write a "
+            "single SQLite SELECT, call run_sql with it, and answer from the rows. "
+            "Never write or modify data."
+        ),
+        tools=[list_sql_schema, run_sql],
+    )
 
 
 class SqlModeAgent(BaseAgent):
@@ -63,4 +67,4 @@ class SqlModeAgent(BaseAgent):
 
 def build() -> dict:
     """Return {mode_constant: agent} for the SQL strategy."""
-    return {config.SQL_FROM_TEXT: SqlModeAgent("sql_mode", text2sql_agent)}
+    return {config.SQL_FROM_TEXT: SqlModeAgent("sql_mode", _text2sql_agent())}

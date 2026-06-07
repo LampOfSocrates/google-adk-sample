@@ -74,5 +74,20 @@ table-driven units.
   fixture (gaps 3, 6); `test_units.py` for the leftover branches (gap 7).
 
 ## Status
-Gaps 1, 2, 4 implemented in the first pass (highest severity + the golden-correctness
-win unlocked by `MockPdfLlm`). Gaps 3, 6, 7 remain.
+**All gaps closed.**
+- 1, 2, 4 — `test_duckdb_tools.py` (stash guards + cross-week correctness) and
+  `test_golden_answers.py` (MockPdfLlm correctness across text/SQL/stash).
+- 3 — `test_errors.py`: malformed-PDF fires the tool error dict + the tables/sql
+  "Could not read/ingest" branches.
+- 6 — `test_phase4_agent.py` extended to the full 5-mode matrix (added
+  `SOME_TABLES_AS_TEXT` and `QUERY_STASH` routing).
+- 7 — `test_units.py`: index parsing, `_resolve_pdf_path` precedence, single/multi
+  index select.
+
+Bug found + fixed while testing: `sql.build()`/`stash.build()` reused module-level
+agent singletons, so a second `build()` hit a parent-conflict `ValidationError` —
+both now construct fresh agents per call, honoring the registry contract. Also
+`run_sql` no longer blocklists the read-only `REPLACE()` function (the SELECT-prefix
++ single-statement guards already block write statements).
+
+Offline suite: 87 passed.
