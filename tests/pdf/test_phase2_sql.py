@@ -1,7 +1,7 @@
 """Phase 2 — SQLite ingestion + the read-only run_sql guard. No LLM."""
 import pytest
 
-from apps.pdf_insight.sql_tools import (
+from apps.pdf_insight.stores.sqlite_store import (
     ingest_tables_to_sqlite,
     list_sql_schema,
     run_sql,

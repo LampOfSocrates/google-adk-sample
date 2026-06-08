@@ -91,7 +91,7 @@ apps/pdf_insight/
     _common.py       # _user_text, _resolve_pdf_path, _parse_table_indices, _text_event
     tables.py        # TablesAnswerAgent -> ALL_/SOME_TABLES_AS_TEXT
     sql.py           # SqlModeAgent + text2sql_agent -> SQL_FROM_TEXT
-    native.py        # NativeBytesAgent -> PDF_BYTES (gemini-only placeholder)
+    native.py        # PdfBytesAgent -> PDF_BYTES (gemini-only placeholder)
 shared/
   pdf.py             # pure pdfplumber helpers (reused by scripts/inspect_pdf.py)
 ```

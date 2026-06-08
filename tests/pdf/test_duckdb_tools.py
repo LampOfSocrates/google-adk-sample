@@ -9,7 +9,7 @@ import json
 
 import pytest
 
-from apps.pdf_insight.duckdb_tools import _jsonable, list_stash_schema, run_stash_sql
+from apps.pdf_insight.stores.duckdb_store import _jsonable, list_stash_schema, run_stash_sql
 from scripts.pdf_to_duckdb import ingest_dir
 from scripts.weekly_report import generate_for
 

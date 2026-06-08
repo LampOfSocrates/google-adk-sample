@@ -15,7 +15,7 @@ from shared.model import get_model
 from google.adk.agents import LlmAgent
 
 from .. import config
-from ..duckdb_tools import list_stash_schema, run_stash_sql
+from ..stores.duckdb_store import list_stash_schema, run_stash_sql
 
 def _stash_agent() -> LlmAgent:
     """Fresh stash specialist per call (one parent per ADK agent — see sql.py)."""

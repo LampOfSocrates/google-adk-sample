@@ -5,8 +5,6 @@ LlmAgent (NL -> one read-only SELECT -> run -> answer).
 """
 from __future__ import annotations
 
-import os
-import tempfile
 from typing import AsyncGenerator
 
 from shared.model import get_model
@@ -15,8 +13,8 @@ from google.adk.agents import BaseAgent, LlmAgent
 from google.adk.agents.invocation_context import InvocationContext
 from google.adk.events import Event, EventActions
 
-from .. import config
-from ..sql_tools import ingest_tables_to_sqlite, list_sql_schema, run_sql
+from .. import config, storage
+from ..stores.sqlite_store import ingest_tables_to_sqlite, list_sql_schema, run_sql
 from ._common import _text_event
 
 def _text2sql_agent() -> LlmAgent:
@@ -49,14 +47,16 @@ class SqlModeAgent(BaseAgent):
     ) -> AsyncGenerator[Event, None]:
         state = ctx.session.state
         path = state.get("pdf_path")
-        # Keep the SQLite file out of the source tree — derive it under the OS temp
-        # dir from the PDF name so re-runs reuse it but the repo stays clean.
-        default_db = os.path.join(tempfile.gettempdir(), os.path.basename(path) + ".sqlite")
+        if not path:  # basename(None) would crash; report it like every other failure
+            yield _text_event(self.name, "Could not ingest: no PDF path provided.")
+            return
         # Cache the ingested db PER SOURCE PDF: re-ingest whenever the active PDF
         # changes. Gating only on "db_path exists" would silently answer a new PDF
         # from the previous document's db after a mid-session switch.
         if state.get("db_source_pdf") != path:
-            db_path = default_db
+            # Location resolved centrally (storage.py) so SQLite and DuckDB — and
+            # one day Postgres — all configure the same way.
+            db_path = storage.sqlite_dsn(path, state)
             try:
                 ingest_tables_to_sqlite(path, db_path)
             except Exception as e:  # noqa: BLE001

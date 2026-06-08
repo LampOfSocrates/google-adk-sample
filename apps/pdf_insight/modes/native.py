@@ -17,7 +17,7 @@ from .. import config
 from ._common import _text_event
 
 
-class NativeBytesAgent(BaseAgent):
+class PdfBytesAgent(BaseAgent):
     """LLM_GETS_PDF_BYTES placeholder. Gemini-only; not wired in the first pass."""
 
     async def _run_async_impl(
@@ -34,4 +34,4 @@ class NativeBytesAgent(BaseAgent):
 
 def build() -> dict:
     """Return {mode_constant: agent} for the native-bytes strategy."""
-    return {config.PDF_BYTES: NativeBytesAgent(name="native_bytes_mode")}
+    return {config.PDF_BYTES: PdfBytesAgent(name="pdf_bytes_mode")}

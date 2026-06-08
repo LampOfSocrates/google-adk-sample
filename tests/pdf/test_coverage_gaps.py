@@ -19,8 +19,9 @@ import pytest  # noqa: E402
 from google.adk.runners import InMemoryRunner  # noqa: E402
 from google.genai import types  # noqa: E402
 
-from apps.pdf_insight import config, modes, sql_tools  # noqa: E402
-from apps.pdf_insight.duckdb_tools import (  # noqa: E402
+from apps.pdf_insight import config, modes  # noqa: E402
+from apps.pdf_insight.stores import sqlite_store as sql_tools  # noqa: E402
+from apps.pdf_insight.stores.duckdb_store import (  # noqa: E402
     _jsonable,
     list_stash_schema,
     run_stash_sql,
@@ -147,10 +148,10 @@ async def test_native_bytes_reports_planned_on_gemini(run_agent, monkeypatch):
 
 
 # ===========================================================================
-# sql_tools.py — SQLite ingestion / guard edge branches
+# stores/sqlite_store.py + stores/base.py — ingestion + shared guard edges
 # ===========================================================================
 def test_ingest_dedupes_columns_that_collide_after_sanitizing(tmp_path, monkeypatch):
-    """sql_tools.py:50 — the `col = f"{col}_x"` de-dup loop body.
+    """sqlite_store.py — the `col = f"{col}_x"` de-dup loop in SQLiteStore.ingest.
 
     Two *distinct* PDF headers can sanitize to the SAME SQL identifier
     ('Vega!' and 'Vega?' both -> 'Vega_'). The loop suffixes the collision so
@@ -170,12 +171,12 @@ def test_ingest_dedupes_columns_that_collide_after_sanitizing(tmp_path, monkeypa
 
 
 def test_run_sql_rejects_write_keyword_inside_a_select():
-    """sql_tools.py:111 — the keyword blocklist for a *single* SELECT statement.
+    """base.py validate_select — the keyword blocklist, shared by every store.
 
-    The phase-2 cases (DELETE/DROP/...) are rejected earlier by the
-    leading-SELECT check (line 104). A query that genuinely starts with SELECT
-    but smuggles a DDL keyword in its body only trips the dedicated blocklist on
-    line 110-111. db_path is a dummy — the guard returns before any DB is opened.
+    The phase-2 cases (DELETE/DROP/...) are rejected earlier by the leading
+    SELECT/WITH check. A query that genuinely starts with SELECT but smuggles a
+    DDL keyword in its body only trips the dedicated blocklist. db_path is a
+    dummy — the guard returns before any DB is opened.
     """
     out = sql_tools.run_sql("SELECT * FROM t0 WHERE drop = 1", _Ctx({"db_path": "x.sqlite"}))
     assert out["status"] == "error"
@@ -183,7 +184,7 @@ def test_run_sql_rejects_write_keyword_inside_a_select():
 
 
 def test_run_sql_surfaces_sqlite_errors(tmp_path):
-    """sql_tools.py:119-120 — the `except sqlite3.Error` handler.
+    """base.py run_select — the engine-error handler (shared by every store).
 
     A well-formed but invalid SELECT (unknown table) must come back as a clean
     error dict, not raise. We ingest the real fixture to get a valid DB, then
@@ -196,11 +197,28 @@ def test_run_sql_surfaces_sqlite_errors(tmp_path):
     assert "SQL error" in out["error_message"]
 
 
+def test_ingest_creates_storage_dir_only_when_path_has_one(tmp_path, monkeypatch):
+    """sqlite_store.py — the `if parent:` guard around os.makedirs in ingest.
+
+    A resolved DSN like data/sqlite/x.sqlite has a parent dir to create; a bare
+    filename ('x.sqlite') has none, and os.makedirs('') would raise. We chdir into
+    tmp_path so a bare-filename DB lands there (not the repo) and stub the extractor
+    so no real PDF is needed.
+    """
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        sql_tools.pdf, "extract_tables",
+        lambda *a, **k: [{"index": 0, "page": 1, "ncols": 1, "header": ["a"], "rows": [["1"]]}],
+    )
+    out = sql_tools.ingest_tables_to_sqlite("ignored.pdf", "bare.sqlite")  # no dir part
+    assert out["status"] == "success"
+
+
 # ===========================================================================
-# duckdb_tools.py — DuckDB stash error branches + _jsonable fallback
+# stores/duckdb_store.py + stores/base.py — DuckDB error branches + jsonable
 # ===========================================================================
 def test_jsonable_falls_back_to_str_for_decimal():
-    """duckdb_tools.py:49 — the `return str(v)` catch-all coercion.
+    """base.py jsonable — the `return str(v)` catch-all coercion.
 
     DuckDB hands back Decimal for some aggregates; it isn't int/float/str/date,
     so it must be stringified to survive ADK's JSON function_response.
@@ -209,7 +227,7 @@ def test_jsonable_falls_back_to_str_for_decimal():
 
 
 def test_list_stash_schema_surfaces_db_errors(tmp_path):
-    """duckdb_tools.py:75-76 — the `except duckdb.Error` in list_stash_schema.
+    """duckdb_store.py — the `except duckdb.Error` in DuckDBStore.list_schema.
 
     The DB file exists (so the missing-file guard passes) but has none of the
     expected registry tables, so querying pdf_tables raises a CatalogException.
@@ -223,7 +241,7 @@ def test_list_stash_schema_surfaces_db_errors(tmp_path):
 
 
 def test_run_stash_sql_surfaces_db_errors(tmp_path):
-    """duckdb_tools.py:112-113 — the `except duckdb.Error` in run_stash_sql.
+    """base.py run_select via DuckDBStore — engine error on a missing table.
 
     A valid read-only SELECT against a table that doesn't exist must return a
     clean error rather than raise out of the tool.
@@ -233,6 +251,27 @@ def test_run_stash_sql_surfaces_db_errors(tmp_path):
     out = run_stash_sql("SELECT * FROM t00", _Ctx({"stash_db": db}))
     assert out["status"] == "error"
     assert "SQL error" in out["error_message"]
+
+
+# ===========================================================================
+# stores/postgres_store.py — the not-yet-implemented backend
+# ===========================================================================
+def test_postgres_store_is_a_documented_placeholder():
+    """postgres_store.py — both abstract methods raise NotImplementedError.
+
+    The skeleton proves the abstraction holds: PostgresStore inherits the guard
+    and run_select unchanged, and only the two engine-specific methods are TODO.
+    run_select surfaces the unimplemented connection as a clean error dict (it
+    catches the raise), while list_schema raises directly.
+    """
+    from apps.pdf_insight.stores import PostgresStore
+
+    store = PostgresStore("postgresql://localhost:5432/pdf_insight")
+    out = store.run_select("SELECT 1")  # _connect_readonly raises -> caught -> error dict
+    assert out["status"] == "error"
+    assert "placeholder" in out["error_message"]
+    with pytest.raises(NotImplementedError):
+        store.list_schema()
 
 
 # ===========================================================================
@@ -256,6 +295,18 @@ async def test_sql_mode_skips_reingest_when_db_matches_source(tmp_path):
         {"pdf_path": FIXTURE, "db_source_pdf": FIXTURE, "db_path": sentinel},
     )
     assert state["db_path"] == sentinel  # untouched -> ingestion skipped
+
+
+async def test_sql_mode_reports_missing_pdf_path(run_agent):
+    """sql.py 51-52 — the `if not path` guard.
+
+    With no pdf_path in state, basename(None) would crash; the agent must instead
+    report it like any other ingest failure. Every other test seeds a pdf_path, so
+    this guard is otherwise never taken.
+    """
+    agent = sql.build()[config.SQL_FROM_TEXT]
+    answer = await run_agent(agent, "how many rows are there?", {})  # no pdf_path
+    assert "no PDF path provided" in answer
 
 
 # ===========================================================================

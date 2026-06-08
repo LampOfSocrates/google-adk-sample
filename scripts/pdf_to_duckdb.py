@@ -20,7 +20,7 @@ accumulates across weeks into ONE physical table keyed by report_date:
 
 `is_total` flags the table's own "Total" row so Text2SQL can exclude it from
 SUM()s. The registry (`pdf_tables`) is what the agent reads first — the index->title
-map — exactly like list_sql_schema in apps/pdf_insight/sql_tools.py.
+map — exactly like list_sql_schema in apps/pdf_insight/stores/sqlite_store.py.
 """
 from __future__ import annotations
 
@@ -36,10 +36,13 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import duckdb  # noqa: E402
 
+from apps.pdf_insight import storage  # noqa: E402
 from shared import pdf  # noqa: E402
 
 SAMPLES_DIR = os.path.join("tests", "pdf", "samples")
-DB_PATH = os.path.join("data", "pdf_stash.duckdb")
+# Same default the reader (duckdb_store) resolves, so build + query agree and
+# both honour PDF_STASH_DB / PDF_DATA_DIR.
+DB_PATH = storage.duckdb_dsn()
 _DATE_RE = re.compile(r"(\d{4}-\d{2}-\d{2})")
 
 

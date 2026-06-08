@@ -7,8 +7,10 @@ question to one of four strategies. Full design: `docs/plans/pdf_insight.md`.
 - This app = `apps/pdf_insight/` + `tests/pdf/`. Layout: `agent.py` assembles
   `root_agent`; `coordinator.py` = base router (`PdfCoordinator`); `modes/` = one
   module per mode (`tables.py`, `sql.py`, `native.py`, `stash.py`) registered via
-  `modes.build_dispatch()`; `config.py`, `tools.py`, `sql_tools.py`,
-  `duckdb_tools.py` (stash mode) round it out.
+  `modes.build_dispatch()`; `stores/` = the SQL backends behind one `SqlStore`
+  abstraction (`base.py` guard + `run_select`; `sqlite_store.py`, `duckdb_store.py`,
+  `postgres_store.py`); `storage.py` resolves where each backend reads/writes;
+  `config.py`, `tools.py` round it out.
 - Only shared deps: `shared/pdf.py` (pdfplumber helpers), `shared/model.py`
   (backend/get_model), and `shared/mock_llm.py` in tests.
 - Stash mode reads `data/pdf_stash.duckdb`, built offline by
@@ -33,5 +35,7 @@ SQL generation call the model.
 `LLM_QUERIES_STASH` (whole-stash DuckDB across all reports) ·
 `auto` (sentinel: let the LLM router decide).
 
-Trust boundary: `run_sql` (SQLite, single mode) and `run_stash_sql` (DuckDB stash)
-both accept a single read-only `SELECT`/`WITH` only.
+Trust boundary: one shared guard in `stores/base.py` (`validate_select` +
+read-only `run_select`) — `run_sql` (SQLite) and `run_stash_sql` (DuckDB) are thin
+adapters over it. A single read-only `SELECT`/`WITH` only. Postgres slots in by
+implementing two methods on `SqlStore` (`postgres_store.py`).

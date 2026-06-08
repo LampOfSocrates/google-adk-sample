@@ -25,7 +25,7 @@ SQL_FROM_TEXT = "LLM_MAKES_SQL_FROM_CHAT"
 SOME_TABLES_AS_TEXT = "LLM_GETS_SOME_TABLES_AS_TEXT"
 # Whole-stash query mode: read-only DuckDB across every ingested report (not a
 # single PDF). Backed by data/pdf_stash.duckdb (scripts/pdf_to_duckdb.py) and the
-# duckdb_tools, so questions can span weeks. Needs no per-request pdf_path.
+# the DuckDB store, so questions can span weeks. Needs no per-request pdf_path.
 QUERY_STASH = "LLM_QUERIES_STASH"
 AUTO = "auto"
 

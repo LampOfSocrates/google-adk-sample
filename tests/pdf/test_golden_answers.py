@@ -13,8 +13,8 @@ from google.adk.agents import LlmAgent
 from shared import pdf
 from shared.mock_pdf_llm import MockPdfLlm
 
-from apps.pdf_insight.duckdb_tools import list_stash_schema, run_stash_sql
-from apps.pdf_insight.sql_tools import ingest_tables_to_sqlite, list_sql_schema, run_sql
+from apps.pdf_insight.stores.duckdb_store import list_stash_schema, run_stash_sql
+from apps.pdf_insight.stores.sqlite_store import ingest_tables_to_sqlite, list_sql_schema, run_sql
 from scripts.pdf_to_duckdb import ingest_dir
 from scripts.weekly_report import generate_for
 
