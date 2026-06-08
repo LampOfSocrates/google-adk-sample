@@ -6,10 +6,10 @@ the coordinator picks it up automatically via build_dispatch().
 """
 from __future__ import annotations
 
-from . import native, sql, stash, tables
+from . import corpus, pdfbytes, pdfpart, text2sql
 
 # Order is cosmetic; keys are the config mode constants and must be unique.
-MODE_BUILDERS = (tables.build, sql.build, native.build, stash.build)
+MODE_BUILDERS = (pdfpart.build, text2sql.build, pdfbytes.build, corpus.build)
 
 
 def build_dispatch() -> dict:

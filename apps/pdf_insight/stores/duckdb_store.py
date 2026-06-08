@@ -1,13 +1,13 @@
-"""DuckDB backend — the whole-stash store for LLM_QUERIES_STASH.
+"""DuckDB backend — the whole-corpus store for LLM_QUERIES_CORPUS.
 
 Reads the PERSISTENT, multi-PDF DuckDB that scripts/pdf_to_duckdb.py builds from
-the weekly report stash, so a question can span every ingested report. There is
+the weekly report corpus, so a question can span every ingested report. There is
 NO per-session ingestion here; the store only reads (connection opened
 read_only). Schema is richer than SQLite's: a `pdf_tables` registry maps table
 index -> title/columns and a `documents` table records report coverage.
 
-Exposes the ADK function tools the stash agent binds (`list_stash_schema`,
-`run_stash_sql`) as thin adapters over `DuckDBStore`.
+This module is just the `DuckDBStore` engine; the backend-neutral corpus tools
+live in `corpus_tools.py` and pick this store (or Postgres) by config.
 """
 from __future__ import annotations
 
@@ -15,9 +15,7 @@ import json
 import os
 
 import duckdb
-from google.adk.tools import ToolContext
 
-from .. import storage
 from .base import SqlStore, jsonable
 
 # Back-compat alias: tests refer to this module's coercion helper as `_jsonable`.
@@ -25,14 +23,16 @@ _jsonable = jsonable
 
 
 class DuckDBStore(SqlStore):
-    """The single whole-stash DuckDB database (read-only, multi-report corpus)."""
+    """The single whole-corpus DuckDB database (read-only, multi-report corpus)."""
+
+    dialect_hint = ""  # corpus columns are typed DOUBLE/DATE; queries are ANSI-clean
 
     def __init__(self, db_path: str):
         self.db_path = db_path
 
     def available(self) -> str | None:
         if not os.path.exists(self.db_path):
-            return f"No stash DB at {self.db_path}. Run scripts/pdf_to_duckdb.py first."
+            return f"No corpus DB at {self.db_path}. Run scripts/pdf_to_duckdb.py first."
         return None
 
     def _connect_readonly(self):
@@ -57,7 +57,7 @@ class DuckDBStore(SqlStore):
                 for r in reg
             ]
         except duckdb.Error as e:  # noqa: BLE001 - malformed/empty DB -> error dict
-            return {"status": "error", "error_message": f"Stash DB error: {e}"}
+            return {"status": "error", "error_message": f"Corpus DB error: {e}"}
         finally:
             con.close()
         return {
@@ -68,14 +68,5 @@ class DuckDBStore(SqlStore):
             "tables": tables,
         }
 
-
-# --- ADK function tools (thin adapters; resolve the stash DSN from state/env) ---
-def list_stash_schema(tool_context: ToolContext) -> dict:
-    """List the stash registry + coverage (the stash agent calls this FIRST)."""
-    return DuckDBStore(storage.duckdb_dsn(tool_context.state)).list_schema()
-
-
-def run_stash_sql(query: str, tool_context: ToolContext) -> dict:
-    """Execute a single read-only SELECT/WITH against the stash. Trust boundary:
-    opens the DB read_only and the shared guard rejects writes/multi-statements."""
-    return DuckDBStore(storage.duckdb_dsn(tool_context.state)).run_select(query)
+# The corpus function tools live in corpus_tools.py now — backend-neutral, so they
+# pick DuckDB or Postgres by config instead of hardcoding this engine.

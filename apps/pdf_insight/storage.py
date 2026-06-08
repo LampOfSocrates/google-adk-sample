@@ -1,7 +1,7 @@
 """Where the pdf_insight SQL backends read and write — one place, one rule.
 
 Both answering modes that use SQL — the per-document SQLite mode
-(`LLM_MAKES_SQL_FROM_CHAT`) and the whole-stash DuckDB mode (`LLM_QUERIES_STASH`)
+(`LLM_MAKES_SQL_FROM_CHAT`) and the whole-corpus DuckDB mode (`LLM_QUERIES_CORPUS`)
 — resolve their storage location HERE, through the SAME precedence so the knobs
 are predictable and documented in a single spot:
 
@@ -38,7 +38,7 @@ def sqlite_dsn(pdf_path: str, state: dict | None = None) -> str:
     directory; the filename is derived from the PDF so a mid-session document
     switch can never answer from the previous doc's database. Persistent (under
     data/sqlite by default, NOT the OS temp dir) so re-runs reuse the ingest,
-    exactly like the DuckDB stash.
+    exactly like the DuckDB corpus.
 
         state['sqlite_dir']  >  PDF_SQLITE_DIR  >  <data_dir>/sqlite
     """
@@ -48,17 +48,19 @@ def sqlite_dsn(pdf_path: str, state: dict | None = None) -> str:
 
 
 def duckdb_dsn(state: dict | None = None) -> str:
-    """The single whole-stash DuckDB database — one corpus across all reports.
+    """The single whole-corpus DuckDB database — one corpus across all reports.
 
-        state['stash_db']  >  PDF_STASH_DB  >  <data_dir>/pdf_stash.duckdb
+        state['corpus_db']  >  PDF_CORPUS_DB  >  <data_dir>/pdf_corpus.duckdb
     """
-    return _resolve(state, "stash_db", "PDF_STASH_DB",
-                    os.path.join(_data_dir(), "pdf_stash.duckdb"))
+    return _resolve(state, "corpus_db", "PDF_CORPUS_DB",
+                    os.path.join(_data_dir(), "pdf_corpus.duckdb"))
 
 
-# When a server backend arrives it slots in with the exact same shape — a single
-# corpus target like DuckDB, just a connection URL instead of a path:
-#
-# def postgres_dsn(state: dict | None = None) -> str:
-#     return _resolve(state, "pg_dsn", "PDF_PG_DSN",
-#                     "postgresql://localhost:5432/pdf_insight")
+def postgres_dsn(state: dict | None = None) -> str:
+    """The corpus served by Postgres — same shape as duckdb_dsn, but a connection
+    URL instead of a file path.
+
+        state['pg_dsn']  >  PDF_PG_DSN  >  postgresql://localhost:5432/pdf_insight
+    """
+    return _resolve(state, "pg_dsn", "PDF_PG_DSN",
+                    "postgresql://localhost:5432/pdf_insight")

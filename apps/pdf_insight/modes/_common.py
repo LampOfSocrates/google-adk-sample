@@ -1,6 +1,6 @@
 """Helpers shared by the coordinator and the per-mode agents.
 
-Pulled out of agent.py so each mode module (tables/sql/native) and the
+Pulled out of agent.py so each mode module (pdfpart/text2sql/pdfbytes/corpus) and the
 coordinator can reuse them without importing each other.
 """
 from __future__ import annotations

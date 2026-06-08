@@ -71,6 +71,12 @@ class SqlStore(ABC):
 
     max_rows = _MAX_ROWS
 
+    # Store-specific SQL-dialect guidance appended to a mode agent's prompt. Empty
+    # for engines whose queries are ANSI-clean; the agent factory only appends it
+    # when non-empty. This is the third (and last) thing that differs per engine —
+    # alongside _connect_readonly and list_schema.
+    dialect_hint: str = ""
+
     @abstractmethod
     def _connect_readonly(self):
         """Open a READ-ONLY connection/handle to this store's engine."""

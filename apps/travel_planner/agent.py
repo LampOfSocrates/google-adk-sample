@@ -116,7 +116,7 @@ search_agent = Agent(
 # right specialist — transferring control to weather_agent (a sub-agent) or
 # calling search_agent (an AgentTool). ADK looks for `root_agent` in this file. ---
 root_agent = Agent(
-    name="coordinator",
+    name="travel_planner",
     model=get_model(),
     description="Top-level travel assistant that routes to specialist agents.",
     instruction=(

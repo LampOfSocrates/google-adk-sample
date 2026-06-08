@@ -34,7 +34,7 @@ def _make_answerer(name: str) -> LlmAgent:
     )
 
 
-class TablesAnswerAgent(BaseAgent):
+class PdfPartTextAgent(BaseAgent):
     """Deterministic extract -> publish to state -> delegate to an answering LLM.
 
     `select=None` extracts all tables (LLM_GETS_ALL_TABLES_AS_TEXT); a list of
@@ -76,8 +76,8 @@ class TablesAnswerAgent(BaseAgent):
 def build() -> dict:
     """Return {mode_constant: agent} for the two tables-as-text strategies."""
     return {
-        config.ALL_TABLES_AS_TEXT: TablesAnswerAgent(
+        config.ALL_TABLES_AS_TEXT: PdfPartTextAgent(
             "tables_all_mode", _make_answerer("answer_all")),
-        config.SOME_TABLES_AS_TEXT: TablesAnswerAgent(
+        config.SOME_TABLES_AS_TEXT: PdfPartTextAgent(
             "tables_some_mode", _make_answerer("answer_some"), select=[0]),
     }

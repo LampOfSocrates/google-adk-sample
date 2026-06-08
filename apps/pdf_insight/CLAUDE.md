@@ -1,20 +1,20 @@
 # pdf_insight — scope note
 
-Multi-mode PDF Q&A agent: one `PdfCoordinator` (custom `BaseAgent`) routes a
+Multi-mode PDF Q&A agent: one `PdfInsightAgent` (custom `BaseAgent`) routes a
 question to one of four strategies. Full design: `docs/plans/pdf_insight.md`.
 
 ## Boundary (what to touch)
 - This app = `apps/pdf_insight/` + `tests/pdf/`. Layout: `agent.py` assembles
-  `root_agent`; `coordinator.py` = base router (`PdfCoordinator`); `modes/` = one
-  module per mode (`tables.py`, `sql.py`, `native.py`, `stash.py`) registered via
+  `root_agent`; `coordinator.py` = base router (`PdfInsightAgent`); `modes/` = one
+  module per mode (`pdfpart.py`, `text2sql.py`, `pdfbytes.py`, `corpus.py`) registered via
   `modes.build_dispatch()`; `stores/` = the SQL backends behind one `SqlStore`
   abstraction (`base.py` guard + `run_select`; `sqlite_store.py`, `duckdb_store.py`,
   `postgres_store.py`); `storage.py` resolves where each backend reads/writes;
   `config.py`, `tools.py` round it out.
 - Only shared deps: `shared/pdf.py` (pdfplumber helpers), `shared/model.py`
   (backend/get_model), and `shared/mock_llm.py` in tests.
-- Stash mode reads `data/pdf_stash.duckdb`, built offline by
-  `scripts/pdf_to_duckdb.py` from the `tests/pdf/samples/` report stash.
+- Corpus mode reads `data/pdf_corpus.duckdb`, built offline by
+  `scripts/pdf_to_duckdb.py` from the `tests/pdf/samples/` report corpus.
 - **Ignore** the sibling apps (`text_to_diagram`, `travel_planner`), `shared/schemas.py`,
   and everything under `docs/cartograph*` / `tests/fixtures/fake_system/` — none are
   dependencies of this app.
@@ -32,10 +32,10 @@ SQL generation call the model.
 ## Mode names — use these constants exactly (see `config.py`)
 `LLM_GETS_ALL_TABLES_AS_TEXT` · `LLM_GETS_SOME_TABLES_AS_TEXT` ·
 `LLM_MAKES_SQL_FROM_CHAT` · `LLM_GETS_PDF_BYTES` (gemini-only, placeholder) ·
-`LLM_QUERIES_STASH` (whole-stash DuckDB across all reports) ·
+`LLM_QUERIES_CORPUS` (whole-corpus DuckDB across all reports) ·
 `auto` (sentinel: let the LLM router decide).
 
 Trust boundary: one shared guard in `stores/base.py` (`validate_select` +
-read-only `run_select`) — `run_sql` (SQLite) and `run_stash_sql` (DuckDB) are thin
+read-only `run_select`) — `run_sql` (SQLite) and `run_corpus_sql` (DuckDB) are thin
 adapters over it. A single read-only `SELECT`/`WITH` only. Postgres slots in by
 implementing two methods on `SqlStore` (`postgres_store.py`).

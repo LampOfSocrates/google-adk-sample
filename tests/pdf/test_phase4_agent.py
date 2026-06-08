@@ -61,15 +61,15 @@ async def test_some_tables_override_selects_only_that_table(converse):
     assert "Table 1" not in text
 
 
-async def test_pinned_stash_mode_routes(converse):
-    # Routing-deep only: under the plain MockLlm the stash agent just replies; the
-    # point is the coordinator dispatches to QUERY_STASH without crashing.
+async def test_pinned_corpus_mode_routes(converse):
+    # Routing-deep only: under the plain MockLlm the corpus agent just replies; the
+    # point is the coordinator dispatches to QUERY_CORPUS without crashing.
     # (Answer correctness for this mode lives in test_golden_answers.py / MockPdfLlm.)
     answers, state = await converse(
         root_agent,
-        [f"mode: {config.QUERY_STASH} total vega by region"],
+        [f"mode: {config.QUERY_CORPUS} total vega by region"],
     )
-    assert state["active_pdf_mode"] == config.QUERY_STASH
+    assert state["active_pdf_mode"] == config.QUERY_CORPUS
     assert answers[-1]  # produced a reply
 
 
@@ -80,7 +80,7 @@ async def test_sql_mode_reingests_when_pdf_changes(run_agent, monkeypatch):
     the active PDF is now the fixture. The old gate (`if not db_path`) skipped
     ingestion and answered from the previous document.
     """
-    from apps.pdf_insight.modes import sql as sqlmod
+    from apps.pdf_insight.modes import text2sql as sqlmod
 
     calls = []
     real = sqlmod.ingest_tables_to_sqlite

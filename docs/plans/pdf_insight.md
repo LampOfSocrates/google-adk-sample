@@ -59,7 +59,7 @@ Each turn the coordinator:
 
 ## Coordinator: hybrid config/reasoning router (custom `BaseAgent`)
 ```python
-class PdfCoordinator(BaseAgent):
+class PdfInsightAgent(BaseAgent):
     async def _run_async_impl(self, ctx):
         mode = resolve_mode(request_override(ctx), ctx.session.state, os.environ)
         ctx.session.state["active_pdf_mode"] = mode
@@ -82,16 +82,22 @@ Rejected for clarity — the custom agent makes the config/reasoning split expli
 apps/pdf_insight/
   __init__.py        # from . import agent
   agent.py           # assembles root_agent from coordinator + modes registry
-  coordinator.py     # PdfCoordinator (base agent), router_agent
+  coordinator.py     # PdfInsightAgent (base agent), router_agent
   config.py          # resolve_mode, MODES, request_override parsing
   tools.py           # extract_tables(select=...), tables_as_text, set_pdf_mode
-  sql_tools.py       # ingest_tables_to_sqlite, list_sql_schema, run_sql (SELECT-only)
+  storage.py         # DSN resolution (state > env > default) for every backend
+  stores/            # one SqlStore abstraction + one read-only guard, per engine
+    base.py          # SqlStore, validate_select, jsonable, run_select
+    sqlite_store.py  # SQLiteStore + ingest_tables_to_sqlite, list_sql_schema, run_sql
+    duckdb_store.py  # DuckDBStore + list_corpus_schema, run_corpus_sql
+    postgres_store.py # PostgresStore (skeleton; implements two methods to go live)
   modes/             # one module per PDF mode; build_dispatch() merges them
     __init__.py      # MODE_BUILDERS registry, build_dispatch()
     _common.py       # _user_text, _resolve_pdf_path, _parse_table_indices, _text_event
-    tables.py        # TablesAnswerAgent -> ALL_/SOME_TABLES_AS_TEXT
-    sql.py           # SqlModeAgent + text2sql_agent -> SQL_FROM_TEXT
-    native.py        # PdfBytesAgent -> PDF_BYTES (gemini-only placeholder)
+    pdf_template.py  # PdfTemplateTextAgent -> ALL_/SOME_TABLES_AS_TEXT
+    text2sql.py      # SqlModeAgent + text2sql_agent -> SQL_FROM_TEXT
+    corpus.py        # corpus_sql_agent -> QUERY_CORPUS (whole-corpus DuckDB)
+    pdfbytes.py        # PdfBytesAgent -> PDF_BYTES (gemini-only placeholder)
 shared/
   pdf.py             # pure pdfplumber helpers (reused by scripts/inspect_pdf.py)
 ```
@@ -144,7 +150,7 @@ tests/pdf/
 1. `shared/pdf.py` + `extract_tables`/`tables_as_text`; re-point `inspect_pdf.py`.
 2. `config.py` + `resolve_mode` + `set_pdf_mode` + precedence tests.
 3. SQLite ingest + `run_sql` (SELECT-only) + tests.
-4. `PdfCoordinator` (router + dispatch) + banner/active-mode + mock branches.
+4. `PdfInsightAgent` (router + dispatch) + banner/active-mode + mock branches.
 5. (later) `LLM_GETS_PDF_BYTES` native upload, gemini-only.
 
 ## Open questions / risks

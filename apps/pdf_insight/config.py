@@ -23,14 +23,14 @@ ALL_TABLES_AS_TEXT = "LLM_GETS_ALL_TABLES_AS_TEXT"
 PDF_BYTES = "LLM_GETS_PDF_BYTES"
 SQL_FROM_TEXT = "LLM_MAKES_SQL_FROM_CHAT"
 SOME_TABLES_AS_TEXT = "LLM_GETS_SOME_TABLES_AS_TEXT"
-# Whole-stash query mode: read-only DuckDB across every ingested report (not a
-# single PDF). Backed by data/pdf_stash.duckdb (scripts/pdf_to_duckdb.py) and the
+# Whole-corpus query mode: read-only DuckDB across every ingested report (not a
+# single PDF). Backed by data/pdf_corpus.duckdb (scripts/pdf_to_duckdb.py) and the
 # the DuckDB store, so questions can span weeks. Needs no per-request pdf_path.
-QUERY_STASH = "LLM_QUERIES_STASH"
+QUERY_CORPUS = "LLM_QUERIES_CORPUS"
 AUTO = "auto"
 
 MODES = {ALL_TABLES_AS_TEXT, PDF_BYTES, SQL_FROM_TEXT, SOME_TABLES_AS_TEXT,
-         QUERY_STASH, AUTO}
+         QUERY_CORPUS, AUTO}
 
 _DIRECTIVE = re.compile(r"\bmode\s*[:=]\s*([A-Za-z_]+)", re.IGNORECASE)
 

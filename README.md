@@ -62,13 +62,13 @@ through ADK's LiteLlm wrapper — `pip install "google-adk[extensions]"`.
 
 ---
 
-## PDF test data & stash
+## PDF test data & corpus
 
 Synthetic, multi-table PDFs for testing `pdf_insight` — a multi-region derivatives
 desk risk report (Greeks: delta/gamma/vega/theta/rho), 16 aggregation tables across
 4 pages. Built with reportlab; parsed back with pdfplumber. Seeded → deterministic.
 
-**Generate the PDFs.** One canonical fixture, or a dated weekly stash:
+**Generate the PDFs.** One canonical fixture, or a dated weekly corpus:
 
 ```bash
 # canonical fixture (committed) + golden answers, all 16 tables, seed 42
@@ -77,11 +77,11 @@ python scripts/pdf_creator.py --out tests/fixtures/risk_report.pdf \
 
 # dated weekly report(s) into tests/pdf/samples/ (seed derived from the date)
 python scripts/weekly_report.py                 # this week's Friday
-python scripts/weekly_report.py --backfill 6    # seed the stash: last 6 Fridays
+python scripts/weekly_report.py --backfill 6    # seed the corpus: last 6 Fridays
 ```
 
-**Parse them into tables (→ DuckDB).** Scan the stash, extract every table, and land
-it in `data/pdf_stash.duckdb` (each logical table accumulates across weeks, keyed by
+**Parse them into tables (→ DuckDB).** Scan the corpus, extract every table, and land
+it in `data/pdf_corpus.duckdb` (each logical table accumulates across weeks, keyed by
 `report_date`):
 
 ```bash
@@ -91,7 +91,7 @@ python scripts/pdf_to_duckdb.py --query \
     "SELECT report_date, vega_k FROM t00 WHERE region='Americas' AND NOT is_total ORDER BY report_date"
 ```
 
-`tests/pdf/samples/*` and `data/pdf_stash.duckdb` are gitignored (regenerable) — run
+`tests/pdf/samples/*` and `data/pdf_corpus.duckdb` are gitignored (regenerable) — run
 the two scripts above whenever you want more data. On Windows PowerShell, invoke via
 the venv, e.g. `.venv\Scripts\python.exe scripts\pdf_to_duckdb.py --reset`.
 

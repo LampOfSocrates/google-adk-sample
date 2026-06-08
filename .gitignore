@@ -24,10 +24,10 @@ Thumbs.db
 # Vendored real demo for L0 integration (pulled by scripts/vendor_demo_system.ps1)
 tests/fixtures/online_boutique/
 
-# Weekly generated report stash (regenerable: scripts/weekly_report.py) + DuckDB
+# Weekly generated report corpus (regenerable: scripts/weekly_report.py) + DuckDB
 tests/pdf/samples/*.pdf
 tests/pdf/samples/*.golden.json
-data/pdf_stash.duckdb
+data/pdf_corpus.duckdb
 
 .coverage
 SENTINEL.sqlite

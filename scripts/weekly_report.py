@@ -1,4 +1,4 @@
-"""Generate a *dated* synthetic risk report into the weekly samples stash.
+"""Generate a *dated* synthetic risk report into the weekly samples corpus.
 
 Built to run on a schedule (Windows Task Scheduler, every Friday) so that
 tests/pdf/samples/ accumulates one report per week:
@@ -7,11 +7,11 @@ tests/pdf/samples/ accumulates one report per week:
 
 The RNG seed is DERIVED FROM THE DATE (YYYYMMDD), so each week's report differs
 but any given date is reproducible. scripts/pdf_to_duckdb.py then ingests this
-stash into a local DuckDB for the pdf_insight SQL mode.
+corpus into a local DuckDB for the pdf_insight SQL mode.
 
     python scripts/weekly_report.py                 # this week's Friday
     python scripts/weekly_report.py --date 2026-06-05
-    python scripts/weekly_report.py --backfill 6    # seed the stash: last 6 Fridays
+    python scripts/weekly_report.py --backfill 6    # seed the corpus: last 6 Fridays
 
 Register the Friday schedule (PowerShell, run once):
 
@@ -51,7 +51,7 @@ def generate_for(date: dt.date, out_dir: str = SAMPLES_DIR) -> str:
     stamp = date.isoformat()
     pdf_path = os.path.join(out_dir, f"risk_report_{stamp}.pdf")
     golden_path = os.path.join(out_dir, f"risk_report_{stamp}.golden.json")
-    # Ruled style: pdfplumber extracts ruled tables exactly (the stash must parse
+    # Ruled style: pdfplumber extracts ruled tables exactly (the corpus must parse
     # cleanly for the DuckDB ingestion). See scripts/pdf_creator.py for why.
     create_test_pdf(
         pdf_path, pages=4, tables=16, seed=seed_for(date),
@@ -65,7 +65,7 @@ def _main() -> None:
     p.add_argument("--date", help="report date YYYY-MM-DD (default: this week's Friday)")
     p.add_argument("--backfill", type=int, default=0,
                    help="also generate the N most recent Fridays before --date")
-    p.add_argument("--dir", default=SAMPLES_DIR, help="output stash folder")
+    p.add_argument("--dir", default=SAMPLES_DIR, help="output corpus folder")
     a = p.parse_args()
 
     base = dt.date.fromisoformat(a.date) if a.date else most_recent_friday()

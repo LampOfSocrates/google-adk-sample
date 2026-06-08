@@ -53,6 +53,10 @@ CLI:
     python scripts/pdf_creator.py --out tests/fixtures/risk_report.pdf \
         --golden tests/fixtures/risk_report.golden.json --pages 4 --tables 16 --seed 42
 """
+# TODO(simplify): this generator has grown to 16 table builders across two render
+# styles (ruled/borderless) plus a multi-flag CLI, while the suite uses only a slice
+# (the committed all-ruled fixture). Trim the table catalog + CLI surface to what's
+# actually exercised, and fold the ruled/borderless split into one path.
 from __future__ import annotations
 
 import argparse

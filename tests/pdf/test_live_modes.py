@@ -11,7 +11,7 @@ formatting choices don't flake the test. Opt-in:
     pytest -m live tests/pdf --backend deepseek   # another backend (needs its key)
 
 The pinned modes (ALL/SOME/SQL) resolve the default fixture PDF themselves, so no
-session state is needed; the stash mode reads a temp DuckDB via PDF_STASH_DB.
+session state is needed; the corpus mode reads a temp DuckDB via PDF_CORPUS_DB.
 """
 import datetime as dt
 import json
@@ -70,27 +70,27 @@ async def test_live_sql_mode_region_max_vega(converse):
     assert REGION_MAX_VEGA.lower() in answers[-1].lower()
 
 
-# -------------------------------------------------------------- stash mode ----
+# -------------------------------------------------------------- corpus mode ----
 @pytest.fixture(scope="module")
-def stash_db(tmp_path_factory):
-    """Build a small 2-week DuckDB stash; return its path."""
-    d = tmp_path_factory.mktemp("live_stash")
+def corpus_db(tmp_path_factory):
+    """Build a small 2-week DuckDB corpus; return its path."""
+    d = tmp_path_factory.mktemp("live_corpus")
     for wk in (dt.date(2026, 5, 1), dt.date(2026, 5, 8)):
         generate_for(wk, str(d))
-    db = str(d / "stash.duckdb")
+    db = str(d / "corpus.duckdb")
     ingest_dir(db, str(d))
     return db
 
 
-async def test_live_stash_mode_vega_by_region(converse, stash_db, monkeypatch):
-    # The stash tools read PDF_STASH_DB when state has no stash_db (converse can't
+async def test_live_corpus_mode_vega_by_region(converse, corpus_db, monkeypatch):
+    # The corpus tools read PDF_CORPUS_DB when state has no corpus_db (converse can't
     # seed state). DuckDB stores numerics as DOUBLE, so summing here is clean.
-    monkeypatch.setenv("PDF_STASH_DB", stash_db)
+    monkeypatch.setenv("PDF_CORPUS_DB", corpus_db)
     answers, state = await converse(
         root_agent,
-        [f"mode: {config.QUERY_STASH} total vega by region across all reports"],
+        [f"mode: {config.QUERY_CORPUS} total vega by region across all reports"],
     )
-    assert state["active_pdf_mode"] == config.QUERY_STASH
-    # It actually grouped by region and read the stash: every region is named.
+    assert state["active_pdf_mode"] == config.QUERY_CORPUS
+    # It actually grouped by region and read the corpus: every region is named.
     for region in ("Americas", "EMEA", "APAC"):
         assert region in answers[-1]

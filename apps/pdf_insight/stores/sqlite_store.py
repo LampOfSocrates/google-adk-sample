@@ -33,6 +33,12 @@ def _sql_ident(name: str, fallback: str) -> str:
 class SQLiteStore(SqlStore):
     """A single-document SQLite database of extracted PDF tables."""
 
+    # Ingested cells are TEXT (with thousands-commas), so aggregating needs a cast.
+    dialect_hint = (
+        "Cells are stored as TEXT with thousands-commas, so before SUM/AVG/CAST a "
+        "numeric column, strip commas first: CAST(REPLACE(\"col\", ',', '') AS REAL)."
+    )
+
     def __init__(self, db_path: str):
         self.db_path = db_path
 

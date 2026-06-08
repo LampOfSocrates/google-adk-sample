@@ -1,4 +1,4 @@
-"""PdfCoordinator — the base agent that decides which mode agent to use.
+"""PdfInsightAgent — the base agent that decides which mode agent to use.
 
 Hybrid config/reasoning router: it resolves the mode from the precedence chain
 (request > session > env > default), records it on the session + a one-line UI
@@ -36,7 +36,7 @@ router_agent = LlmAgent(
 )
 
 
-class PdfCoordinator(BaseAgent):
+class PdfInsightAgent(BaseAgent):
     """Hybrid config/reasoning router (see module docstring)."""
 
     router: LlmAgent

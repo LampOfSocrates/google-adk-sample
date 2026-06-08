@@ -1,9 +1,9 @@
-"""Ingest the weekly PDF report stash into a local DuckDB.
+"""Ingest the weekly PDF report corpus into a local DuckDB.
 
 PIPELINE: scripts/weekly_report.py drops dated PDFs into tests/pdf/samples/; this
 CLI parses every table out of them (pdfplumber, via shared.pdf) and lands them in
 one DuckDB file so the pdf_insight SQL mode (LLM_MAKES_SQL_FROM_CHAT) can answer
-questions across the whole stash — including week-over-week trends.
+questions across the whole corpus — including week-over-week trends.
 
     python scripts/pdf_to_duckdb.py                       # ingest tests/pdf/samples
     python scripts/pdf_to_duckdb.py --reset               # rebuild from scratch
@@ -41,7 +41,7 @@ from shared import pdf  # noqa: E402
 
 SAMPLES_DIR = os.path.join("tests", "pdf", "samples")
 # Same default the reader (duckdb_store) resolves, so build + query agree and
-# both honour PDF_STASH_DB / PDF_DATA_DIR.
+# both honour PDF_CORPUS_DB / PDF_DATA_DIR.
 DB_PATH = storage.duckdb_dsn()
 _DATE_RE = re.compile(r"(\d{4}-\d{2}-\d{2})")
 
@@ -199,8 +199,8 @@ def ingest_dir(db_path: str, samples_dir: str, pattern: str = "*.pdf",
 
 # ------------------------------------------------------------------- main ----
 def _main() -> None:
-    p = argparse.ArgumentParser(description="Ingest the PDF report stash into DuckDB.")
-    p.add_argument("--dir", default=SAMPLES_DIR, help="stash folder of dated PDFs")
+    p = argparse.ArgumentParser(description="Ingest the PDF report corpus into DuckDB.")
+    p.add_argument("--dir", default=SAMPLES_DIR, help="corpus folder of dated PDFs")
     p.add_argument("--db", default=DB_PATH, help="DuckDB file to write")
     p.add_argument("--glob", default="*.pdf", help="filename pattern")
     p.add_argument("--strategy", default="lines", choices=["lines", "text"],

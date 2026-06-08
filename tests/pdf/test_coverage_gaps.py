@@ -21,12 +21,13 @@ from google.genai import types  # noqa: E402
 
 from apps.pdf_insight import config, modes  # noqa: E402
 from apps.pdf_insight.stores import sqlite_store as sql_tools  # noqa: E402
-from apps.pdf_insight.stores.duckdb_store import (  # noqa: E402
-    _jsonable,
-    list_stash_schema,
-    run_stash_sql,
+from apps.pdf_insight.stores.corpus_tools import (  # noqa: E402
+    get_corpus_store,
+    list_corpus_schema,
+    run_corpus_sql,
 )
-from apps.pdf_insight.modes import _common, native, sql, tables  # noqa: E402
+from apps.pdf_insight.stores.duckdb_store import _jsonable  # noqa: E402
+from apps.pdf_insight.modes import _common, corpus, pdfbytes, pdfpart, text2sql  # noqa: E402
 
 FIXTURE = "tests/fixtures/risk_report.pdf"
 
@@ -132,17 +133,17 @@ def test_build_dispatch_rejects_duplicate_mode(monkeypatch):
 
 
 # ===========================================================================
-# modes/native.py — the gemini branch of the placeholder
+# modes/pdfbytes.py — the gemini branch of the placeholder
 # ===========================================================================
 async def test_native_bytes_reports_planned_on_gemini(run_agent, monkeypatch):
-    """native.py:31 — the `else` branch shown when the backend IS gemini.
+    """pdfbytes.py:31 — the `else` branch shown when the backend IS gemini.
 
     The suite runs under mock, so normally only the "needs gemini" refusal is
     hit. Forcing is_gemini() True exercises the "planned for a later phase"
     message instead, without needing a real gemini backend.
     """
-    monkeypatch.setattr(native, "is_gemini", lambda: True)
-    agent = native.build()[config.PDF_BYTES]
+    monkeypatch.setattr(pdfbytes, "is_gemini", lambda: True)
+    agent = pdfbytes.build()[config.PDF_BYTES]
     answer = await run_agent(agent, "read the whole document", {})
     assert "planned" in answer.lower()
 
@@ -226,7 +227,7 @@ def test_jsonable_falls_back_to_str_for_decimal():
     assert _jsonable(Decimal("3.50")) == "3.50"
 
 
-def test_list_stash_schema_surfaces_db_errors(tmp_path):
+def test_list_corpus_schema_surfaces_db_errors(tmp_path):
     """duckdb_store.py — the `except duckdb.Error` in DuckDBStore.list_schema.
 
     The DB file exists (so the missing-file guard passes) but has none of the
@@ -235,12 +236,12 @@ def test_list_stash_schema_surfaces_db_errors(tmp_path):
     """
     db = str(tmp_path / "empty.duckdb")
     duckdb.connect(db).close()  # creates a valid-but-empty DuckDB file
-    out = list_stash_schema(_Ctx({"stash_db": db}))
+    out = list_corpus_schema(_Ctx({"corpus_db": db}))
     assert out["status"] == "error"
-    assert "Stash DB error" in out["error_message"]
+    assert "Corpus DB error" in out["error_message"]
 
 
-def test_run_stash_sql_surfaces_db_errors(tmp_path):
+def test_run_corpus_sql_surfaces_db_errors(tmp_path):
     """base.py run_select via DuckDBStore — engine error on a missing table.
 
     A valid read-only SELECT against a table that doesn't exist must return a
@@ -248,7 +249,7 @@ def test_run_stash_sql_surfaces_db_errors(tmp_path):
     """
     db = str(tmp_path / "empty.duckdb")
     duckdb.connect(db).close()
-    out = run_stash_sql("SELECT * FROM t00", _Ctx({"stash_db": db}))
+    out = run_corpus_sql("SELECT * FROM t00", _Ctx({"corpus_db": db}))
     assert out["status"] == "error"
     assert "SQL error" in out["error_message"]
 
@@ -275,10 +276,58 @@ def test_postgres_store_is_a_documented_placeholder():
 
 
 # ===========================================================================
-# modes/sql.py — the re-ingest-skip branch
+# stores/corpus_tools.py — the config-time backend selector
+# ===========================================================================
+def test_get_corpus_store_defaults_to_duckdb(monkeypatch):
+    """corpus_tools.py — CORPUS_BACKEND unset resolves to a DuckDBStore."""
+    from apps.pdf_insight.stores import DuckDBStore
+
+    monkeypatch.delenv("CORPUS_BACKEND", raising=False)
+    assert isinstance(get_corpus_store({"corpus_db": "x.duckdb"}), DuckDBStore)
+
+
+def test_get_corpus_store_selects_postgres(monkeypatch):
+    """corpus_tools.py — CORPUS_BACKEND=postgres resolves to a PostgresStore.
+
+    Also exercises storage.postgres_dsn (the postgres branch's DSN resolver).
+    """
+    from apps.pdf_insight.stores import PostgresStore
+
+    monkeypatch.setenv("CORPUS_BACKEND", "postgres")
+    store = get_corpus_store()
+    assert isinstance(store, PostgresStore)
+    assert store.dsn.startswith("postgresql://")  # from storage.postgres_dsn default
+
+
+def test_get_corpus_store_rejects_unknown_backend(monkeypatch):
+    """corpus_tools.py — an unknown CORPUS_BACKEND fails loudly, not silently."""
+    monkeypatch.setenv("CORPUS_BACKEND", "mysql")
+    with pytest.raises(ValueError, match="Unknown CORPUS_BACKEND"):
+        get_corpus_store()
+
+
+# ===========================================================================
+# modes/corpus.py — the dialect_hint is appended only when non-empty
+# ===========================================================================
+def test_corpus_agent_appends_nonempty_dialect_hint():
+    """corpus.py build_corpus_agent — the `if store.dialect_hint` true arc.
+
+    DuckDB's hint is empty (covered by the normal build at root_agent assembly),
+    so the *append* branch needs a store with a non-empty hint. PostgresStore has
+    one, and its dialect text must land in the agent's instruction.
+    """
+    from apps.pdf_insight.stores import PostgresStore
+
+    agent = corpus.build_corpus_agent(PostgresStore("postgresql://x"))
+    assert "Postgres syntax" in agent.instruction
+    assert "list_corpus_schema FIRST" in agent.instruction  # shared guidance still there
+
+
+# ===========================================================================
+# modes/text2sql.py — the re-ingest-skip branch
 # ===========================================================================
 async def test_sql_mode_skips_reingest_when_db_matches_source(tmp_path):
-    """sql.py 58->71 — the `db_source_pdf == path` skip path.
+    """text2sql.py 58->71 — the `db_source_pdf == path` skip path.
 
     Ingestion is cached per source PDF: if the session already ingested THIS
     pdf, the agent must skip straight to the Text2SQL delegate without rebuilding
@@ -288,7 +337,7 @@ async def test_sql_mode_skips_reingest_when_db_matches_source(tmp_path):
     under tmp_path so the delegated tools don't create a file in the repo.
     """
     sentinel = str(tmp_path / "sentinel.sqlite")
-    agent = sql.build()[config.SQL_FROM_TEXT]
+    agent = text2sql.build()[config.SQL_FROM_TEXT]
     state = await _run_and_get_state(
         agent,
         "how many rows are there?",
@@ -298,38 +347,38 @@ async def test_sql_mode_skips_reingest_when_db_matches_source(tmp_path):
 
 
 async def test_sql_mode_reports_missing_pdf_path(run_agent):
-    """sql.py 51-52 — the `if not path` guard.
+    """text2sql.py 51-52 — the `if not path` guard.
 
     With no pdf_path in state, basename(None) would crash; the agent must instead
     report it like any other ingest failure. Every other test seeds a pdf_path, so
     this guard is otherwise never taken.
     """
-    agent = sql.build()[config.SQL_FROM_TEXT]
+    agent = text2sql.build()[config.SQL_FROM_TEXT]
     answer = await run_agent(agent, "how many rows are there?", {})  # no pdf_path
     assert "no PDF path provided" in answer
 
 
 # ===========================================================================
-# modes/tables.py — SOME-mode per-request index override (both arcs)
+# modes/pdfpart.py — SOME-mode per-request index override (both arcs)
 # ===========================================================================
 async def test_some_mode_uses_message_index_override(run_agent):
-    """tables.py 59->60 — a `tables N` directive in the message overrides select.
+    """pdfpart.py 59->60 — a `tables N` directive in the message overrides select.
 
     SOME-mode defaults to select=[0]; an explicit 'table 2' must redirect it to
     index 2 for this turn. (Also shores up the thin SOME-mode integration path.)
     """
-    agent = tables.build()[config.SOME_TABLES_AS_TEXT]
+    agent = pdfpart.build()[config.SOME_TABLES_AS_TEXT]
     answer = await run_agent(agent, "summarize table 2", {"pdf_path": FIXTURE})
     assert answer  # the deterministic stage extracted table 2 and the answerer replied
 
 
 async def test_some_mode_keeps_default_when_no_index_in_message(run_agent):
-    """tables.py 59->61 — no index in the message, so select=[0] is kept.
+    """pdfpart.py 59->61 — no index in the message, so select=[0] is kept.
 
     When _parse_table_indices finds nothing, the override is None and the agent
     falls through to extraction with the default selection. This is the arc the
     happy path skips because it always passes an explicit index.
     """
-    agent = tables.build()[config.SOME_TABLES_AS_TEXT]
+    agent = pdfpart.build()[config.SOME_TABLES_AS_TEXT]
     answer = await run_agent(agent, "summarize the holdings", {"pdf_path": FIXTURE})
     assert answer

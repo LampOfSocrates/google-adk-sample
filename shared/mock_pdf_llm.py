@@ -6,8 +6,8 @@ subclass *knows the domain* (a derivatives-desk risk report: Greeks delta/gamma/
 vega/theta/rho + notional/var/pnl, sliced by region/asset/desk/underlying/tenor/
 currency/date) and so produces **golden-accurate** offline behavior:
 
-  * SQL mode (LLM_MAKES_SQL_FROM_CHAT) and stash mode (LLM_QUERIES_STASH):
-      read the schema returned by list_sql_schema / list_stash_schema, parse the
+  * SQL mode (LLM_MAKES_SQL_FROM_CHAT) and corpus mode (LLM_QUERIES_CORPUS):
+      read the schema returned by list_sql_schema / list_corpus_schema, parse the
       question into (measure, dimension, aggregation, filters), emit a real
       read-only SELECT, and then phrase the returned rows into a sentence. The
       tool runs the SQL for real, so the numbers are the true numbers.
@@ -18,6 +18,10 @@ It is heuristic, not a model: intent is matched against domain synonym/value
 vocab. Unrecognized requests fall back to the generic `MockLlm`. Used explicitly
 by the pdf_insight tests — the default `LLM_BACKEND=mock` stays the plain mock.
 """
+# TODO(simplify): the NL -> (measure, dimension, aggregation, filter) heuristic and
+# its synonym/value vocab have grown hard to follow. Narrow it to the intents the
+# golden tests actually assert, and table-drive the synonym matching, instead of
+# expanding the hand-rolled parser.
 from __future__ import annotations
 
 import re
@@ -126,9 +130,9 @@ def _parse_intent(text: str) -> dict:
 
 # ---------------------------------------------------------------- SQL modes ---
 def _normalize_schema(fr) -> list[dict]:
-    """list_sql_schema / list_stash_schema response -> [{name, columns}]."""
+    """list_sql_schema / list_corpus_schema response -> [{name, columns}]."""
     r = fr.response if isinstance(fr.response, dict) else {}
-    if "tables" in r:  # list_stash_schema
+    if "tables" in r:  # list_corpus_schema
         return [{"name": t["table"], "columns": t.get("columns", [])} for t in r["tables"]]
     if "schema" in r:  # list_sql_schema
         return [{"name": t["table"], "columns": t.get("columns", [])} for t in r["schema"]]
@@ -146,7 +150,7 @@ def _pick_table(schema, measure_key, dim_col_key):
     return cands[0]
 
 
-def _build_sql(intent: dict, schema: list[dict], is_stash: bool):
+def _build_sql(intent: dict, schema: list[dict], is_corpus: bool):
     """Return (sql, shape) or (None, None) if the intent can't be expressed."""
     meas = intent["measure"]
     if not meas:
@@ -156,14 +160,14 @@ def _build_sql(intent: dict, schema: list[dict], is_stash: bool):
         return None, None
     cols, name = table["columns"], table["name"]
     mcol = _find_col(cols, meas)
-    # Stash columns are already DOUBLE; the single-PDF SQLite stores cells as TEXT
+    # Corpus columns are already DOUBLE; the single-PDF SQLite stores cells as TEXT
     # WITH thousands commas ("2,765"), and SQLite SUM would coerce that to 2 — so
     # strip the commas and CAST before aggregating.
-    mexpr = f'"{mcol}"' if is_stash else f'CAST(REPLACE("{mcol}", \',\', \'\') AS REAL)'
+    mexpr = f'"{mcol}"' if is_corpus else f'CAST(REPLACE("{mcol}", \',\', \'\') AS REAL)'
 
-    # exclude each table's own subtotal: stash has a boolean flag; sqlite doesn't.
+    # exclude each table's own subtotal: corpus has a boolean flag; sqlite doesn't.
     label_col = cols[0] if cols else None
-    excl = "NOT is_total" if is_stash else (f'"{label_col}" <> \'Total\'' if label_col else "1=1")
+    excl = "NOT is_total" if is_corpus else (f'"{label_col}" <> \'Total\'' if label_col else "1=1")
 
     _FILTER_COLKEY = {"asset_class": "asset"}  # dim key -> column substring
     wheres = [excl]
@@ -174,7 +178,7 @@ def _build_sql(intent: dict, schema: list[dict], is_stash: bool):
     where = " AND ".join(wheres)
     agg = "AVG" if intent["agg"] == "avg" else "SUM"
 
-    if intent["trend"] and is_stash:
+    if intent["trend"] and is_corpus:
         return (f'SELECT report_date, {agg}({mexpr}) AS {meas} FROM "{name}" '
                 f"WHERE {where} GROUP BY report_date ORDER BY report_date"), "trend"
 
@@ -305,19 +309,19 @@ class MockPdfLlm(MockLlm):
     def _decide_pdf(self, req: LlmRequest) -> LlmResponse:
         available = set((req.tools_dict or {}).keys())
         user_text, fr = _current_turn(req.contents)
-        is_stash = "run_stash_sql" in available
+        is_corpus = "run_corpus_sql" in available
 
         # 1) a tool just returned -----------------------------------------------
         if fr is not None and fr.name != "transfer_to_agent":
-            if fr.name in ("list_sql_schema", "list_stash_schema"):
+            if fr.name in ("list_sql_schema", "list_corpus_schema"):
                 schema = _normalize_schema(fr)
-                sql, _ = _build_sql(_parse_intent(user_text), schema, is_stash)
-                run_tool = "run_stash_sql" if is_stash else "run_sql"
+                sql, _ = _build_sql(_parse_intent(user_text), schema, is_corpus)
+                run_tool = "run_corpus_sql" if is_corpus else "run_sql"
                 if sql:
                     return self._log(f"{run_tool}:domain", _call_part(run_tool, {"query": sql}))
                 # couldn't express it -> let the base mock's generic SELECT run.
                 return super()._decide(req)
-            if fr.name in ("run_sql", "run_stash_sql"):
+            if fr.name in ("run_sql", "run_corpus_sql"):
                 result = fr.response if isinstance(fr.response, dict) else {}
                 if result.get("status") == "success":
                     return self._log("answer:sql", _text_part(_format_rows(_parse_intent(user_text), result)))
@@ -331,8 +335,8 @@ class MockPdfLlm(MockLlm):
                 return super()._decide(req)
 
         # 2) no tool yet: pick the first action for whichever agent this is -----
-        if "list_stash_schema" in available:
-            return self._log("list_stash_schema", _call_part("list_stash_schema", {}))
+        if "list_corpus_schema" in available:
+            return self._log("list_corpus_schema", _call_part("list_corpus_schema", {}))
         if "list_sql_schema" in available:
             return self._log("list_sql_schema", _call_part("list_sql_schema", {}))
         if "extract_tables" in available:

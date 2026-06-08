@@ -17,6 +17,11 @@ from .base import SqlStore
 class PostgresStore(SqlStore):
     """A server-backed store of extracted PDF tables (placeholder)."""
 
+    dialect_hint = (
+        "Use Postgres syntax: ILIKE for case-insensitive match, date_trunc('week', "
+        "report_date) for period grouping, and :: casts (e.g. col::numeric)."
+    )
+
     def __init__(self, dsn: str):
         self.dsn = dsn
 
