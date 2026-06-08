@@ -3,9 +3,9 @@
 WHY this exists: pdf_insight parses tables out of PDFs (pdfplumber), ingests them
 into SQLite, and answers questions / runs Text2SQL over them. To test that end to
 end we need PDFs whose *true* contents we know exactly. This module builds one
-seeded synthetic dataset and renders it as up to 16 aggregation tables across up
-to 4 pages, then emits a `golden_answers.json` so tests can assert against ground
-truth instead of eyeballing.
+seeded synthetic dataset, renders it as 16 aggregation tables across a few pages,
+and emits a `golden_answers.json` so tests can assert against ground truth instead
+of eyeballing.
 
 WRITER vs READER: this uses reportlab to *write*; the app uses pdfplumber to
 *read*. They share no code, so a bug in one can't mask a bug in the other.
@@ -17,16 +17,12 @@ asset_class, underlying, book, currency, tenor_bucket. Values are deliberately
 *signed* (long/short delta), theta is mostly negative (long options bleed), so the
 SQL/answer tests exercise SUM/AVG/ABS over signed data, not just happy-path counts.
 
-STYLES: tables render either "ruled" (gridlines -> pdfplumber strategy="lines") or
-"borderless" (whitespace-aligned -> strategy="text"). The fixture mixes both on
-purpose, so the suite covers the app's table-detection strategy switch. Each
-table's style is recorded in the golden file so the test picks the right strategy.
-(Caveat: pdfplumber's text strategy fragments borderless cells, so borderless
-tables aren't golden-verifiable — the committed fixture is all-ruled; borderless
-is for a degradation/robustness test only.)
+RENDERING: every table is "ruled" (gridlines), which pdfplumber reads exactly with
+strategy="lines" — the strategy the app uses. That makes the whole fixture
+golden-verifiable end to end.
 
-16-TABLE LAYOUT (index -> table, grouped by page; the `--tables N` flag keeps the
-first N, `--pages` re-balances them). Builders live in build_tables():
+16-TABLE LAYOUT (index -> table, grouped by page; `--pages` balances them by
+height). Builders live in build_tables():
 
   Page 1 — overview
     0  Risk Summary by Region           GROUP BY region        (full Greeks + Total)
@@ -51,19 +47,15 @@ first N, `--pages` re-balances them). Builders live in build_tables():
 
 CLI:
     python scripts/pdf_creator.py --out tests/fixtures/risk_report.pdf \
-        --golden tests/fixtures/risk_report.golden.json --pages 4 --tables 16 --seed 42
+        --golden tests/fixtures/risk_report.golden.json --pages 4 --seed 42
 """
-# TODO(simplify): this generator has grown to 16 table builders across two render
-# styles (ruled/borderless) plus a multi-flag CLI, while the suite uses only a slice
-# (the committed all-ruled fixture). Trim the table catalog + CLI surface to what's
-# actually exercised, and fold the ruled/borderless split into one path.
 from __future__ import annotations
 
 import argparse
 import json
 import os
 import random
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Callable
 
 from reportlab import rl_config
@@ -112,9 +104,13 @@ TRADING_DATES = [f"2025-06-{d:02d}" for d in (2, 3, 4, 5, 6, 9, 10, 11, 12, 13)]
 MEAS = ["notional", "delta", "gamma", "vega", "theta", "rho", "var", "pnl"]
 GREEKS = ["delta", "gamma", "vega", "theta", "rho"]
 
+# Size of the synthetic base fact table. Fixed: every report (committed fixture and
+# the dated weekly corpus) uses the same population so only the seed varies output.
+N_POSITIONS = 1100
+
 
 # ------------------------------------------------------------------- dataset ---
-def build_dataset(seed: int, n_positions: int) -> list[dict]:
+def build_dataset(seed: int, n_positions: int = N_POSITIONS) -> list[dict]:
     """Build the seeded position-level fact table. Pure: same seed -> same rows."""
     rng = random.Random(seed)
     rows: list[dict] = []
@@ -182,7 +178,6 @@ class Table:
     title: str
     columns: list[str]
     rows: list[list[str]]          # formatted cell strings, total row last if any
-    style: str                      # "ruled" | "borderless"
     has_total: bool = False
 
 
@@ -196,7 +191,7 @@ def _summary_row(agg_bucket: dict) -> list[str]:
     return [_fmt(b["__count"])] + [_fmt(b[m]) for m in MEAS]
 
 
-def summary_table(index, title, rows, key, key_label, order, style) -> Table:
+def summary_table(index, title, rows, key, key_label, order) -> Table:
     """A GROUP BY <key> summary carrying the FULL Greek set + a Total row."""
     grouped = agg_by(rows, lambda r: r[key])
     ordered = [k for k in order if k in grouped] + \
@@ -205,10 +200,10 @@ def summary_table(index, title, rows, key, key_label, order, style) -> Table:
     total = {"__count": sum(g["__count"] for g in grouped.values()),
              **{m: sum(g[m] for g in grouped.values()) for m in MEAS}}
     out_rows.append(["Total"] + _summary_row(total))
-    return Table(index, title, [key_label] + _SUMMARY_COLS, out_rows, style, has_total=True)
+    return Table(index, title, [key_label] + _SUMMARY_COLS, out_rows, has_total=True)
 
 
-def multilevel_table(index, title, rows, k1, k2, l1, l2, o1, o2, style) -> Table:
+def multilevel_table(index, title, rows, k1, k2, l1, l2, o1, o2) -> Table:
     """Two-level GROUP BY (k1, k2) over the Greeks + a Total row (tall detail)."""
     grouped = agg_by(rows, lambda r: (r[k1], r[k2]))
     cols = [l1, l2] + ["Delta($k)", "Gamma($k)", "Vega($k)", "Theta($k/d)", "Rho($k)"]
@@ -220,11 +215,11 @@ def multilevel_table(index, title, rows, k1, k2, l1, l2, o1, o2, style) -> Table
                 out_rows.append([a, b] + [_fmt(g[m]) for m in GREEKS])
     total = {m: sum(g[m] for g in grouped.values()) for m in GREEKS}
     out_rows.append(["Total", ""] + [_fmt(total[m]) for m in GREEKS])
-    return Table(index, title, cols, out_rows, style, has_total=True)
+    return Table(index, title, cols, out_rows, has_total=True)
 
 
 def pivot_table(index, title, rows, row_key, row_order, col_key, col_order,
-                measure, row_label, style) -> Table:
+                measure, row_label) -> Table:
     """Cross-tab of one measure: row_key down, col_key across, with margins."""
     cells: dict = {}
     for r in rows:
@@ -242,10 +237,10 @@ def pivot_table(index, title, rows, row_key, row_order, col_key, col_order,
         grand += rtot
         out_rows.append([rv] + [_fmt(v) for v in vals] + [_fmt(rtot)])
     out_rows.append(["Total"] + [_fmt(col_totals[c]) for c in col_order] + [_fmt(grand)])
-    return Table(index, title, cols, out_rows, style, has_total=True)
+    return Table(index, title, cols, out_rows, has_total=True)
 
 
-def topn_table(index, title, rows, key, key_label, measure, n, by_abs, style) -> Table:
+def topn_table(index, title, rows, key, key_label, measure, n, by_abs) -> Table:
     """Top-N <key> ranked by <measure> (or |measure|), carrying full Greeks + VaR."""
     grouped = agg_by(rows, lambda r: r[key])
     keyer = (lambda kv: abs(kv[1][measure])) if by_abs else (lambda kv: kv[1][measure])
@@ -256,10 +251,10 @@ def topn_table(index, title, rows, key, key_label, measure, n, by_abs, style) ->
         [str(i + 1), k] + [_fmt(g[m]) for m in GREEKS] + [_fmt(g["var"])]
         for i, (k, g) in enumerate(ranked)
     ]
-    return Table(index, title, cols, out_rows, style)
+    return Table(index, title, cols, out_rows)
 
 
-def kpi_table(index, title, rows, style) -> Table:
+def kpi_table(index, title, rows) -> Table:
     """Portfolio KPI totals as a Metric | Value table."""
     tot = {m: sum(r[m] for r in rows) for m in MEAS}
     data = [
@@ -273,10 +268,10 @@ def kpi_table(index, title, rows, style) -> Table:
         ("1d VaR ($k)", _fmt(tot["var"])),
         ("Daily P&L ($k)", _fmt(tot["pnl"])),
     ]
-    return Table(index, title, ["Metric", "Value"], [list(d) for d in data], style)
+    return Table(index, title, ["Metric", "Value"], [list(d) for d in data])
 
 
-def daily_trend_table(index, title, rows, style) -> Table:
+def daily_trend_table(index, title, rows) -> Table:
     grouped = agg_by(rows, lambda r: r["date"])
     cols = ["Date", "Pos", "Notional($m)", "Vega($k)", "VaR($k)", "PnL($k)"]
     out_rows = [
@@ -284,10 +279,10 @@ def daily_trend_table(index, title, rows, style) -> Table:
          _fmt(grouped[d]["vega"]), _fmt(grouped[d]["var"]), _fmt(grouped[d]["pnl"])]
         for d in sorted(grouped)
     ]
-    return Table(index, title, cols, out_rows, style)
+    return Table(index, title, cols, out_rows)
 
 
-def vega_ladder_table(index, title, rows, underlying, style) -> Table:
+def vega_ladder_table(index, title, rows, underlying) -> Table:
     sub = [r for r in rows if r["underlying"] == underlying]
     grouped = agg_by(sub, lambda r: r["tenor_bucket"])
     cols = ["Tenor", "Pos", "Vega($k)", "Gamma($k)", "Delta($k)"]
@@ -296,10 +291,10 @@ def vega_ladder_table(index, title, rows, underlying, style) -> Table:
          _fmt(grouped[t]["gamma"]), _fmt(grouped[t]["delta"])]
         for t in TENORS if t in grouped
     ]
-    return Table(index, f"{title} ({underlying})", cols, out_rows, style)
+    return Table(index, f"{title} ({underlying})", cols, out_rows)
 
 
-def scenario_table(index, title, rows, style) -> Table:
+def scenario_table(index, title, rows) -> Table:
     """First-order stress P&L derived from the portfolio's aggregate Greeks.
 
     pnl = delta*spot_shock(%) + vega*vol_shock(pt) + rho*rate_shock(%). gamma
@@ -317,33 +312,33 @@ def scenario_table(index, title, rows, style) -> Table:
         ("Rates -50bp", -rho * 0.5),
     ]
     out_rows = [[name, _fmt(val)] for name, val in scen]
-    return Table(index, title, ["Scenario", "P&L Impact($k)"], out_rows, style)
+    return Table(index, title, ["Scenario", "P&L Impact($k)"], out_rows)
 
 
-# The canonical 16-table layout (order = page order; first `n` are kept).
-def build_tables(rows: list[dict], style_for: Callable[[int], str]) -> list[Table]:
+# The canonical 16-table layout (order = page order).
+def build_tables(rows: list[dict]) -> list[Table]:
     ccy_order = sorted({r["currency"] for r in rows})
     specs = [
         # page 1 — overview
-        lambda i: summary_table(i, "Risk Summary by Region", rows, "region", "Region", REGIONS, style_for(i)),
-        lambda i: summary_table(i, "Risk Summary by Asset Class", rows, "asset_class", "Asset Class", ASSET_CLASSES, style_for(i)),
-        lambda i: summary_table(i, "Risk Summary by Desk", rows, "desk", "Desk", list(DESK_FOR_ASSET), style_for(i)),
-        lambda i: kpi_table(i, "Portfolio KPI Totals", rows, style_for(i)),
+        lambda i: summary_table(i, "Risk Summary by Region", rows, "region", "Region", REGIONS),
+        lambda i: summary_table(i, "Risk Summary by Asset Class", rows, "asset_class", "Asset Class", ASSET_CLASSES),
+        lambda i: summary_table(i, "Risk Summary by Desk", rows, "desk", "Desk", list(DESK_FOR_ASSET)),
+        lambda i: kpi_table(i, "Portfolio KPI Totals", rows),
         # page 2 — sensitivities (pivots), one per Greek
-        lambda i: pivot_table(i, "Vega by Region x Asset Class ($k)", rows, "asset_class", ASSET_CLASSES, "region", REGIONS, "vega", "Asset Class", style_for(i)),
-        lambda i: pivot_table(i, "Delta by Desk x Tenor ($k)", rows, "desk", list(DESK_FOR_ASSET), "tenor_bucket", TENORS, "delta", "Desk", style_for(i)),
-        lambda i: pivot_table(i, "Gamma by Asset Class x Tenor ($k)", rows, "asset_class", ASSET_CLASSES, "tenor_bucket", TENORS, "gamma", "Asset Class", style_for(i)),
-        lambda i: pivot_table(i, "Rho by Region x Currency ($k)", rows, "region", REGIONS, "currency", ccy_order, "rho", "Region", style_for(i)),
+        lambda i: pivot_table(i, "Vega by Region x Asset Class ($k)", rows, "asset_class", ASSET_CLASSES, "region", REGIONS, "vega", "Asset Class"),
+        lambda i: pivot_table(i, "Delta by Desk x Tenor ($k)", rows, "desk", list(DESK_FOR_ASSET), "tenor_bucket", TENORS, "delta", "Desk"),
+        lambda i: pivot_table(i, "Gamma by Asset Class x Tenor ($k)", rows, "asset_class", ASSET_CLASSES, "tenor_bucket", TENORS, "gamma", "Asset Class"),
+        lambda i: pivot_table(i, "Rho by Region x Currency ($k)", rows, "region", REGIONS, "currency", ccy_order, "rho", "Region"),
         # page 3 — rankings & term structure
-        lambda i: topn_table(i, "Top 8 Underlyings by |Vega|", rows, "underlying", "Underlying", "vega", 8, True, style_for(i)),
-        lambda i: topn_table(i, "Top 8 Books by 1d VaR", rows, "book", "Book", "var", 8, False, style_for(i)),
-        lambda i: summary_table(i, "Greeks by Tenor Bucket", rows, "tenor_bucket", "Tenor", TENORS, style_for(i)),
-        lambda i: multilevel_table(i, "Risk by Region x Asset Class", rows, "region", "asset_class", "Region", "Asset Class", REGIONS, ASSET_CLASSES, style_for(i)),
+        lambda i: topn_table(i, "Top 8 Underlyings by |Vega|", rows, "underlying", "Underlying", "vega", 8, True),
+        lambda i: topn_table(i, "Top 8 Books by 1d VaR", rows, "book", "Book", "var", 8, False),
+        lambda i: summary_table(i, "Greeks by Tenor Bucket", rows, "tenor_bucket", "Tenor", TENORS),
+        lambda i: multilevel_table(i, "Risk by Region x Asset Class", rows, "region", "asset_class", "Region", "Asset Class", REGIONS, ASSET_CLASSES),
         # page 4 — time & detail
-        lambda i: daily_trend_table(i, "Daily Risk Trend", rows, style_for(i)),
-        lambda i: vega_ladder_table(i, "Vega Ladder by Tenor", rows, "SPX", style_for(i)),
-        lambda i: summary_table(i, "Risk Summary by Currency", rows, "currency", "Currency", ccy_order, style_for(i)),
-        lambda i: scenario_table(i, "Stress P&L by Scenario", rows, style_for(i)),
+        lambda i: daily_trend_table(i, "Daily Risk Trend", rows),
+        lambda i: vega_ladder_table(i, "Vega Ladder by Tenor", rows, "SPX"),
+        lambda i: summary_table(i, "Risk Summary by Currency", rows, "currency", "Currency", ccy_order),
+        lambda i: scenario_table(i, "Stress P&L by Scenario", rows),
     ]
     return [spec(i) for i, spec in enumerate(specs)]
 
@@ -371,8 +366,8 @@ def compute_golden(rows: list[dict], tables: list[Table], seed: int) -> dict:
         "seed": seed,
         "facts": facts,
         "tables": [
-            {"index": t.index, "title": t.title, "style": t.style,
-             "columns": t.columns, "rows": t.rows, "has_total": t.has_total}
+            {"index": t.index, "title": t.title,
+             "columns": t.columns, "rows": t.rows}
             for t in tables
         ],
     }
@@ -419,57 +414,43 @@ def _render(tables: list[Table], out_path: str, pages: int) -> None:
 
 
 def _table_style(t: Table) -> TableStyle:
+    """Ruled style: gridlines + shaded header so pdfplumber strategy='lines' reads
+    every cell exactly. The Total row (if any) is bolded and ruled off above."""
     cmds = [
         ("FONTSIZE", (0, 0), (-1, -1), 7.5),
         ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),     # header
         ("ALIGN", (1, 0), (-1, -1), "RIGHT"),                # numeric cols right
         ("TOPPADDING", (0, 0), (-1, -1), 1.5),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 1.5),
+        ("GRID", (0, 0), (-1, -1), 0.4, colors.grey),
+        ("BACKGROUND", (0, 0), (-1, 0), colors.whitesmoke),
     ]
-    if t.style == "ruled":
-        cmds += [
-            ("GRID", (0, 0), (-1, -1), 0.4, colors.grey),
-            ("BACKGROUND", (0, 0), (-1, 0), colors.whitesmoke),
-        ]
-    else:  # borderless -> no lines; pdfplumber must use strategy="text"
-        cmds += [("LINEBELOW", (0, 0), (-1, 0), 0.4, colors.white)]
     if t.has_total:
         cmds += [
             ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
-            ("LINEABOVE", (0, -1), (-1, -1), 0.4, colors.grey if t.style == "ruled" else colors.white),
+            ("LINEABOVE", (0, -1), (-1, -1), 0.4, colors.grey),
         ]
     return TableStyle(cmds)
 
 
 # ------------------------------------------------------------------- public ---
-def create_test_pdf(out_path: str, *, pages: int = 4, tables: int = 16,
-                    seed: int = 42, style: str = "mixed",
-                    positions: int = 1100, golden_path: str | None = None) -> dict:
+def create_test_pdf(out_path: str, *, pages: int = 4, seed: int = 42,
+                    golden_path: str | None = None) -> dict:
     """Generate the test PDF (and optionally the golden file). Returns the golden dict.
 
     Args:
         out_path: where to write the .pdf.
-        pages: target page count (tables are split evenly across them).
-        tables: how many of the 16 canonical tables to emit (1..16).
+        pages: target page count (the 16 tables are balanced across them).
         seed: RNG seed -> deterministic, byte-stable output.
-        style: "mixed" (alternate), "ruled", or "borderless".
-        positions: size of the synthetic base fact table.
         golden_path: if given, write the golden JSON here too.
     """
-    tables = max(1, min(16, tables))
-
-    def style_for(i: int) -> str:
-        if style in ("ruled", "borderless"):
-            return style
-        return "ruled" if i % 2 == 0 else "borderless"
-
-    rows = build_dataset(seed, positions)
-    all_tables = build_tables(rows, style_for)[:tables]
+    rows = build_dataset(seed)
+    tables = build_tables(rows)
 
     os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
-    _render(all_tables, out_path, pages)
+    _render(tables, out_path, pages)
 
-    golden = compute_golden(rows, all_tables, seed)
+    golden = compute_golden(rows, tables, seed)
     if golden_path:
         os.makedirs(os.path.dirname(os.path.abspath(golden_path)), exist_ok=True)
         with open(golden_path, "w", encoding="utf-8") as f:
@@ -482,18 +463,11 @@ def _main() -> None:
     p.add_argument("--out", default=os.path.join("tests", "fixtures", "risk_report.pdf"))
     p.add_argument("--golden", default=None, help="path to also write golden_answers.json")
     p.add_argument("--pages", type=int, default=4)
-    p.add_argument("--tables", type=int, default=16)
     p.add_argument("--seed", type=int, default=42)
-    p.add_argument("--positions", type=int, default=1100)
-    p.add_argument("--style", choices=["mixed", "ruled", "borderless"], default="mixed")
     a = p.parse_args()
-    golden = create_test_pdf(
-        a.out, pages=a.pages, tables=a.tables, seed=a.seed,
-        style=a.style, positions=a.positions, golden_path=a.golden,
-    )
-    n_ruled = sum(1 for t in golden["tables"] if t["style"] == "ruled")
-    print(f"Wrote {a.out}: {len(golden['tables'])} tables across {a.pages} page(s) "
-          f"({n_ruled} ruled / {len(golden['tables']) - n_ruled} borderless), seed={a.seed}.")
+    golden = create_test_pdf(a.out, pages=a.pages, seed=a.seed, golden_path=a.golden)
+    print(f"Wrote {a.out}: {len(golden['tables'])} tables across {a.pages} page(s), "
+          f"seed={a.seed}.")
     if a.golden:
         print(f"Wrote golden -> {a.golden}")
     print("Totals:", golden["facts"]["totals"])

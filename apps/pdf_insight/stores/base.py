@@ -82,6 +82,22 @@ class SqlStore(ABC):
         """Open a READ-ONLY connection/handle to this store's engine."""
 
     @abstractmethod
+    def ingest_pdf(self, pdf_path: str, report_date: str | None = None,
+                   strategy: str = "lines", title_for=None) -> dict:
+        """Ingest one PDF's extracted tables into this store. One name, one
+        signature for every backend (this is the contract the divergence note
+        asked for). WHAT it does is store-specific:
+
+          * per-document stores (SQLite) REPLACE — they hold the latest PDF only,
+            so `report_date`/`title_for` don't apply and are ignored;
+          * corpus stores (DuckDB/Postgres) APPEND, idempotent per `report_date`
+            (defaulted from the filename, else today), with `title_for(index)`
+            supplying table titles.
+
+        Returns a `{status, ...}` summary. `strategy` is the pdfplumber table
+        strategy, honored by every backend."""
+
+    @abstractmethod
     def list_schema(self) -> dict:
         """Describe what's queryable. Shape is engine-specific but always carries
         a `status` key and, on success, the columns an agent can SELECT."""

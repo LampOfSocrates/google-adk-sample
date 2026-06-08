@@ -12,20 +12,22 @@ end to end), **corpus DB** (the new DuckDB trust boundary + cross-week correctne
 ## Gaps, by severity
 
 **1 — Corpus mode (`LLM_QUERIES_CORPUS`) had zero tests. Biggest hole.**
-`stores/duckdb_store.py` adds a *second* SQL trust boundary (`run_corpus_sql`) with its own
-guards — `_FORBIDDEN` blocklist, `SELECT`/`WITH`-only check, multi-statement
-rejection, `read_only` connection, missing-DB error path, `_jsonable` date/Decimal
-coercion — and `QUERY_CORPUS` isn't in the phase-4 routing matrix. For a guard on
-model-written SQL this is where bugs hide.
+The corpus path (`run_corpus_sql` over DuckDB) is a SQL trust boundary on
+model-written SQL — `SELECT`/`WITH`-only check, multi-statement rejection,
+write/DDL blocklist, `read_only` connection, missing-DB error path, `jsonable`
+date/Decimal coercion — and `QUERY_CORPUS` wasn't in the phase-4 routing matrix.
+For a guard on model-written SQL this is where bugs hide.
 - Boundary tests (no LLM, call the tool directly): `DELETE`/`DROP`/`ATTACH`/`COPY`
   rejected; `SELECT 1; SELECT 2` rejected; `SELECT` / `WITH … SELECT` allowed;
   missing-DB → clean error dict, not an exception; a `DATE` column round-trips via
-  `_jsonable` as an ISO string.
-- The two boundaries differ in philosophy — `run_corpus_sql` leans on keyword
-  blocklisting, `run_sql` on the `SELECT`-prefix + single-statement invariant. Pin
-  **both** so a future edit can't silently weaken either. (`run_sql` was narrowed to
-  stop blocking the read-only `REPLACE()` *function*; regression-test that `REPLACE()`
-  is allowed while `REPLACE INTO` / `INSERT OR REPLACE` stay rejected.)
+  `jsonable` as an ISO string.
+- Since the `SqlStore` refactor, `run_sql` (SQLite) and `run_corpus_sql` (DuckDB)
+  share ONE guard — `validate_select` in `stores/base.py` (single-statement +
+  leading-`SELECT`/`WITH` + write/DDL blocklist together). Pin it so a future edit
+  can't silently weaken it for either backend. (The blocklist deliberately allows
+  the read-only `REPLACE()` *function*; regression-test that `REPLACE()` is allowed
+  while `REPLACE INTO` / `INSERT OR REPLACE` stay rejected by the leading-SELECT +
+  single-statement rules.)
 
 **2 — Corpus DB correctness was unverified — the whole reason DuckDB exists.**
 The value proposition is *cross-week* questions; nothing checked they're right.
@@ -37,7 +39,7 @@ sum); the `pdf_tables` registry maps index→title for all 16 tables.
 
 **3 — One happy-path PDF; error branches never fire.**
 No malformed / encrypted / zero-table fixture, so the `except` paths in
-`modes/pdf_template.py` and `modes/text2sql.py` ("Could not read/ingest …"), `extract_tables`'s
+`modes/pdfpart.py` and `modes/text2sql.py` ("Could not read/ingest …"), `extract_tables`'s
 error dict, and the "No db_path" guard are dead in tests. Add a broken-PDF (and a
 no-tables) fixture; assert each surfaces a graceful error string, not a traceback.
 
@@ -60,7 +62,7 @@ The routing test should cover all five modes pinned via `mode:` directive:
 
 **7 — Untested branches in the refactored code.**
 Per-request index override (`_parse_table_indices` + `select` override in
-`modes/pdf_template.py`), multi-index select (`[0,2]`), `_resolve_pdf_path` precedence
+`modes/pdfpart.py`), multi-index select (`[0,2]`), `_resolve_pdf_path` precedence
 (message path > state > env > default), `extract_tables`'s error dict. Cheap
 table-driven units.
 
@@ -90,4 +92,4 @@ both now construct fresh agents per call, honoring the registry contract. Also
 `run_sql` no longer blocklists the read-only `REPLACE()` function (the SELECT-prefix
 + single-statement guards already block write statements).
 
-Offline suite: 87 passed.
+Offline suite: 101 passed (`pytest -m "not live" tests/pdf`).

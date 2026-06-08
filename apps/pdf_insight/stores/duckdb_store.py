@@ -37,7 +37,12 @@ def _report_date(filename: str) -> str | None:
 
 
 def _sql_ident(name: str, fallback: str) -> str:
-    """Header cell -> safe, lower-snake DuckDB identifier. 'Vega($k)' -> 'vega_k'."""
+    """Header cell -> safe, lower-snake DuckDB identifier. 'Vega($k)' -> 'vega_k'.
+
+    Deliberately stricter than sqlite_store._sql_ident (which preserves case and
+    replaces `\\W` 1:1): the corpus is queried by hand across weeks, so columns
+    must be lower_snake and identical report to report. See the SQLite version for
+    the full rationale; the two are kept separate on purpose."""
     ident = re.sub(r"\W+", "_", name).strip("_").lower()
     if not ident or ident[0].isdigit():
         ident = f"c_{ident}" if ident else fallback

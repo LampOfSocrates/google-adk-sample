@@ -1,6 +1,6 @@
 """Mode resolution for pdf_insight.
 
-The app answers PDF questions in one of four MODES. Which one runs is resolved
+The app answers PDF questions in one of five MODES. Which one runs is resolved
 from a precedence chain, then (only when nothing is pinned) by LLM reasoning:
 
     request  >  session  >  env  >  default("auto" -> let the model decide)

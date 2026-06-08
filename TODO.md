@@ -17,29 +17,6 @@ Tracked follow-ups (not blocking; each is self-contained).
   `extract_tables`. Likely in `shared/mock_llm.py` (keep `extract_tables` the
   default so existing routing tests hold).
 
-- [ ] **Charts in the Streamlit UI.**
-  Auto-visualize SQL results: intercept the `run_corpus_sql` / `run_sql` tool
-  results (already captured in the stream as `{columns, rows}`) and render a
-  **table + an auto-chosen chart** in the chat — `st.line_chart` when there's a
-  `report_date` column (time-series / week-over-week), `st.bar_chart` for
-  category→measure. Zero new deps (native Vega-Lite); Plotly (`st.plotly_chart`)
-  is a one-line upgrade for extra polish. Do NOT hand-roll HTML/SVG.
-  Mirror the existing ```mermaid rendering pattern in `streamlit_app.py`.
-
-## Simplification / tech debt
-
-- [ ] **Simplify `scripts/pdf_creator.py`** (`# TODO(simplify)` at line 56).
-  The synthetic-PDF generator has grown to 16 table builders across two render
-  styles (ruled/borderless) plus a multi-flag CLI, while the suite uses only a
-  slice (the committed all-ruled fixture). Trim the table catalog + CLI surface to
-  what's actually exercised, and fold the ruled/borderless split into one path.
-
-- [ ] **Simplify `shared/mock_pdf_llm.py`** (`# TODO(simplify)` at line 21).
-  The NL → (measure, dimension, aggregation, filter) heuristic and its
-  synonym/value vocab have grown hard to follow. Narrow it to the intents the
-  golden tests actually assert, and table-drive the synonym matching, instead of
-  expanding the hand-rolled parser.
-
 ## Known deferred (not TODO-marked, for visibility)
 
 - [ ] **`PostgresStore` implementation** (`apps/pdf_insight/stores/postgres_store.py`).

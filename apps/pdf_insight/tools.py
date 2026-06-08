@@ -40,7 +40,8 @@ def set_pdf_mode(mode: str, tool_context: ToolContext) -> dict:
     the precedence chain). Pass 'auto' to hand mode selection back to the model.
 
     Args:
-        mode: one of the LLM_GETS_* / LLM_GIVES_* constants, or 'auto'.
+        mode: one of the MODES constants (LLM_GETS_* / LLM_MAKES_* /
+            LLM_QUERIES_*), or 'auto'.
     """
     if mode not in MODES:
         return {

@@ -28,7 +28,7 @@ def ingest_pdf_everywhere(pdf_path: str, state: dict | None = None) -> dict:
 
     # SQLite: latest-PDF-only. Replace the active per-document db.
     sqlite_store = SQLiteStore(storage.sqlite_dsn(pdf_path, state))
-    summary["sqlite"] = sqlite_store.ingest(pdf_path)
+    summary["sqlite"] = sqlite_store.ingest_pdf(pdf_path)
     state["db_path"] = sqlite_store.db_path
     state["db_source_pdf"] = pdf_path
 

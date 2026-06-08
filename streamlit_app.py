@@ -27,6 +27,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+import pandas as pd  # noqa: E402
 import streamlit as st  # noqa: E402
 from streamlit_mermaid import st_mermaid  # noqa: E402
 from google.adk.runners import InMemoryRunner  # noqa: E402
@@ -140,6 +141,83 @@ def _render_answer(text: str, key_prefix: str) -> None:
         st.markdown(text)
     elif text[pos:].strip():
         st.markdown(text[pos:])
+
+
+# Tool names whose {columns, rows} result we visualize as a table + chart.
+_SQL_TOOLS = ("run_sql", "run_corpus_sql")
+
+
+def _to_number(v):
+    """Coerce a cell to float, or None. Handles SQLite TEXT cells ('2,765', '8%')
+    and DuckDB's already-numeric scalars; non-numeric strings -> None."""
+    if isinstance(v, bool):
+        return None
+    if isinstance(v, (int, float)):
+        return float(v)
+    if isinstance(v, str):
+        s = v.replace(",", "").replace("%", "").strip()
+        if s in ("", "-", "—", "n/a", "N/A"):
+            return None
+        try:
+            return float(s)
+        except ValueError:
+            return None
+    return None
+
+
+def _numeric_columns(columns: list[str], rows: list[list]) -> list[str]:
+    """Columns whose every non-empty cell parses as a number."""
+    numeric = []
+    for i, col in enumerate(columns):
+        vals = [r[i] for r in rows if i < len(r) and r[i] not in (None, "")]
+        if vals and all(_to_number(v) is not None for v in vals):
+            numeric.append(col)
+    return numeric
+
+
+def _sql_result_payload(tool_result) -> dict | None:
+    """Pull a {columns, rows} success result out of a tool response, or None.
+    ADK passes a dict tool return straight through, but wraps some in {'result':…}."""
+    r = tool_result
+    if isinstance(r, dict) and "columns" not in r and isinstance(r.get("result"), dict):
+        r = r["result"]
+    if (isinstance(r, dict) and r.get("status") == "success"
+            and r.get("columns") and r.get("rows")):
+        return {"columns": list(r["columns"]), "rows": [list(row) for row in r["rows"]]}
+    return None
+
+
+def _render_sql_results(results: list[dict]) -> None:
+    """For each captured SQL result, draw the rows as a table plus an auto-chosen
+    chart: a line chart when a report_date column is present (time-series), else a
+    bar chart of the first category column against its numeric measures."""
+    for res in results:
+        columns, rows = res["columns"], res["rows"]
+        st.caption(f"📊 `{res['tool_name']}` — {len(rows)} row(s)")
+        st.dataframe([dict(zip(columns, r)) for r in rows],
+                     width="stretch", hide_index=True)
+        if len(rows) < 2:
+            continue  # a single point isn't worth a chart
+        numeric = _numeric_columns(columns, rows)
+        date_col = next((c for c in columns
+                         if c.lower() == "report_date" and c not in numeric), None)
+        measures = [c for c in numeric if c != date_col]
+        if not measures:
+            continue
+        frame = {
+            c: ([_to_number(r[i]) if i < len(r) else None for r in rows] if c in numeric
+                else [r[i] if i < len(r) else None for r in rows])
+            for i, c in enumerate(columns)
+        }
+        df = pd.DataFrame(frame)
+        if date_col:
+            st.line_chart(df.sort_values(date_col), x=date_col, y=measures)
+        else:
+            category = next((c for c in columns if c not in numeric), None)
+            if category:
+                st.bar_chart(df, x=category, y=measures)
+            else:
+                st.bar_chart(df[measures])
 
 
 def _meta_caption(latency: float | None, usage: dict | None) -> str:
@@ -277,6 +355,8 @@ with tab_chat:
                     with st.expander("💭 Thinking", expanded=False):
                         _render_steps(m["steps"], st)
                 _render_answer(m["content"], key_prefix=f"hist{i}")
+                if m.get("sql_results"):
+                    _render_sql_results(m["sql_results"])
                 if m.get("latency") is not None or m.get("usage"):
                     st.caption(_meta_caption(m.get("latency"), m.get("usage")))
             else:
@@ -301,6 +381,7 @@ with tab_chat:
             status = st.status("Thinking…", expanded=False)
             answer_box = st.empty()
             answer, steps, usage = "", [], None
+            sql_results = []          # {columns, rows} from run_sql/run_corpus_sql
             debug_snaps = []          # raw-event snapshots for the Debug tab
             t_start = time.perf_counter()
 
@@ -335,6 +416,10 @@ with tab_chat:
                     elif ev.kind == "tool_result":
                         steps.append({"kind": "tool_result",
                                       "tool_name": ev.tool_name, "tool_result": ev.tool_result})
+                        if ev.tool_name in _SQL_TOOLS:
+                            payload = _sql_result_payload(ev.tool_result)
+                            if payload:
+                                sql_results.append({"tool_name": ev.tool_name, **payload})
                         status.markdown(f"↳ **{ev.tool_name}** returned")
                         status.json(ev.tool_result)
                     elif ev.kind == "text_delta":
@@ -357,11 +442,13 @@ with tab_chat:
             )
             answer_box.empty()  # drop the streaming placeholder...
             _render_answer(answer, key_prefix=f"turn{len(st.session_state.messages)}")
+            if sql_results:
+                _render_sql_results(sql_results)
             st.caption(_meta_caption(latency, usage))
 
         st.session_state.messages.append(
             {"role": "assistant", "content": answer, "steps": steps,
-             "latency": latency, "usage": usage}
+             "sql_results": sql_results, "latency": latency, "usage": usage}
         )
         st.session_state.debug_turns.append({
             "prompt": prompt,

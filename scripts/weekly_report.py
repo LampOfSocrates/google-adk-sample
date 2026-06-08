@@ -51,12 +51,9 @@ def generate_for(date: dt.date, out_dir: str = SAMPLES_DIR) -> str:
     stamp = date.isoformat()
     pdf_path = os.path.join(out_dir, f"risk_report_{stamp}.pdf")
     golden_path = os.path.join(out_dir, f"risk_report_{stamp}.golden.json")
-    # Ruled style: pdfplumber extracts ruled tables exactly (the corpus must parse
-    # cleanly for the DuckDB ingestion). See scripts/pdf_creator.py for why.
-    create_test_pdf(
-        pdf_path, pages=4, tables=16, seed=seed_for(date),
-        style="ruled", golden_path=golden_path,
-    )
+    # pdf_creator now renders every table ruled (pdfplumber extracts those exactly,
+    # so the corpus parses cleanly for DuckDB ingestion). See scripts/pdf_creator.py.
+    create_test_pdf(pdf_path, pages=4, seed=seed_for(date), golden_path=golden_path)
     return pdf_path
 
 

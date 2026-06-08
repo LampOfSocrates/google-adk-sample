@@ -23,7 +23,18 @@ from .base import SqlStore
 
 
 def _sql_ident(name: str, fallback: str) -> str:
-    """Coerce an arbitrary header into a safe SQLite identifier."""
+    """Coerce an arbitrary header into a safe SQLite identifier.
+
+    Intentionally NOT identical to duckdb_store._sql_ident — the two differ per
+    dialect/use, so keep them separate (shared cleverness here would fight one
+    backend or the other):
+      * here (SQLite, single-doc): preserve the header's case and replace each
+        non-word char 1:1 (`\\W`), e.g. 'Vega($k)' -> 'Vega__k_'. Faithful,
+        column names are only ever read back by the model, not joined across docs.
+      * there (DuckDB, corpus): lower_snake (`\\W+` collapsed + .lower()), e.g.
+        'Vega($k)' -> 'vega_k', because corpus columns are queried by hand and
+        must be stable/identical week to week for cross-report SQL.
+    """
     ident = re.sub(r"\W", "_", name)
     if not ident or ident[0].isdigit():
         ident = f"c_{ident}" if ident else fallback
@@ -47,13 +58,16 @@ class SQLiteStore(SqlStore):
         con.execute("PRAGMA query_only = ON")  # engine-level read-only, Windows-safe
         return con
 
-    def ingest(self, pdf_path: str) -> dict:
+    def ingest_pdf(self, pdf_path: str, report_date: str | None = None,
+                   strategy: str = "lines", title_for=None) -> dict:
         """Parse every table from the PDF into its own SQLite table (deterministic).
 
         One detected PDF table -> one SQLite table named t<index>. Header cells
-        become column names (sanitized + de-duplicated); data rows are TEXT.
+        become column names (sanitized + de-duplicated); data rows are TEXT. This
+        is the per-document (REPLACE) store, so the corpus-only `report_date` /
+        `title_for` args are ignored — see SqlStore.ingest_pdf for the contract.
         """
-        tables = pdf.extract_tables(pdf_path)
+        tables = pdf.extract_tables(pdf_path, strategy=strategy)
         parent = os.path.dirname(self.db_path)
         if parent:  # create the storage dir (e.g. data/sqlite) on first ingest
             os.makedirs(parent, exist_ok=True)
@@ -101,7 +115,7 @@ class SQLiteStore(SqlStore):
 # --- ADK function tools (thin adapters; read the db path from session state) ---
 def ingest_tables_to_sqlite(pdf_path: str, db_path: str) -> dict:
     """Deterministic ingestion entry point the coordinator runs before Text2SQL."""
-    return SQLiteStore(db_path).ingest(pdf_path)
+    return SQLiteStore(db_path).ingest_pdf(pdf_path)
 
 
 def list_sql_schema(tool_context: ToolContext) -> dict:

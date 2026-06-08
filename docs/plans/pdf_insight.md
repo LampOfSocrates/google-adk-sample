@@ -1,39 +1,41 @@
 # Implementation Plan — `pdf_insight` app
 
-Status: **IMPLEMENTED** (first pass: the three offline modes). `LLM_GETS_PDF_BYTES`
-is wired as a guarded placeholder pending the gemini-only native-upload phase.
+Status: **IMPLEMENTED** (four offline modes: the two tables-as-text modes, the
+per-document SQL mode, and the whole-corpus query mode). `LLM_GETS_PDF_BYTES` is
+wired as a guarded placeholder pending the gemini-only native-upload phase.
 
 ## Goal
-A multi-mode PDF agent. The same coordinator answers questions over a PDF using
-one of four strategies ("modes"). Which mode runs is resolved from a precedence
-chain (env → session → request) and, when nothing is pinned, by LLM reasoning.
-The active mode is surfaced in the UI every turn.
+A multi-mode PDF agent. The same coordinator answers questions over a PDF (or the
+whole corpus) using one of five strategies ("modes"). Which mode runs is resolved
+from a precedence chain (env → session → request) and, when nothing is pinned, by
+LLM reasoning. The active mode is surfaced in the UI every turn.
 
 ## ADK principle driving the design
 Deterministic work = Tools / custom agents; reasoning = `LlmAgent`. PDF parsing,
 SQLite ingest, and SQL execution are deterministic tools. Only mode-selection
 (when `auto`) and SQL generation use the model.
 
-## The four modes (canonical names — use exactly these)
+## The five modes (canonical names — use exactly these)
 | Mode constant | Strategy | Determinism | Backend |
 |---|---|---|---|
 | `LLM_GETS_ALL_TABLES_AS_TEXT`  | pdfplumber → ALL tables rendered as text → model answers | deterministic extract; LLM answers | any (incl. mock) |
-| `LLM_GETS_PDF_BYTES`           | PDF bytes as multimodal `Part` → Gemini reads doc | model does all | gemini only |
-| `LLM_MAKES_SQL_FROM_CHAT`      | pdfplumber tables → local SQLite → NL→SQL→execute | deterministic ingest/execute; LLM writes SQL | any for ingest/run; LLM for SQL |
 | `LLM_GETS_SOME_TABLES_AS_TEXT` | pdfplumber → SELECTED table(s) rendered as text → model | deterministic; LLM answers | any (incl. mock) |
+| `LLM_MAKES_SQL_FROM_CHAT`      | pdfplumber tables → per-document SQLite → NL→SQL→execute | deterministic ingest/execute; LLM writes SQL | any for ingest/run; LLM for SQL |
+| `LLM_QUERIES_CORPUS`           | whole-corpus DuckDB (every ingested report) → NL→SQL→execute | deterministic ingest/execute; LLM writes SQL | any for run; LLM for SQL |
+| `LLM_GETS_PDF_BYTES`           | PDF bytes as multimodal `Part` → Gemini reads doc | model does all | gemini only |
 
-**Scope for first pass:** `LLM_GETS_ALL_TABLES_AS_TEXT`, `LLM_MAKES_SQL_FROM_CHAT`,
-`LLM_GETS_SOME_TABLES_AS_TEXT` (all run under `LLM_BACKEND=mock`).
-`LLM_GETS_PDF_BYTES` is a **later phase** (gemini-only). The coordinator refuses
-`LLM_GETS_PDF_BYTES` under mock with a clear error rather than failing deep.
+**Scope.** The four non-bytes modes all run under `LLM_BACKEND=mock`.
+`LLM_GETS_PDF_BYTES` remains a **later phase** (gemini-only): the `pdfbytes` mode
+agent refuses it under any non-gemini backend with a clear error rather than
+failing deep.
 
 Sentinel `auto` = "no mode pinned, let the LLM router decide".
 
 ## Config resolution (precedence: request > session > env > default)
 ```python
 # apps/pdf_insight/config.py
-MODES = {"LLM_GETS_ALL_TABLES_AS_TEXT","LLM_GETS_PDF_BYTES","LLM_MAKES_SQL_FROM_CHAT",
-         "LLM_GETS_SOME_TABLES_AS_TEXT","auto"}
+MODES = {"LLM_GETS_ALL_TABLES_AS_TEXT","LLM_GETS_SOME_TABLES_AS_TEXT",
+         "LLM_MAKES_SQL_FROM_CHAT","LLM_QUERIES_CORPUS","LLM_GETS_PDF_BYTES","auto"}
 
 def resolve_mode(request_override, state, env) -> str:
     for candidate in (request_override,                 # 1. per-request (highest)
@@ -86,18 +88,21 @@ apps/pdf_insight/
   config.py          # resolve_mode, MODES, request_override parsing
   tools.py           # extract_tables(select=...), tables_as_text, set_pdf_mode
   storage.py         # DSN resolution (state > env > default) for every backend
+  ingest.py          # ingest_pdf_everywhere — upload handler (SQLite replace + corpus append)
   stores/            # one SqlStore abstraction + one read-only guard, per engine
+    __init__.py      # re-exports the stores + shared guard + corpus tools
     base.py          # SqlStore, validate_select, jsonable, run_select
-    sqlite_store.py  # SQLiteStore + ingest_tables_to_sqlite, list_sql_schema, run_sql
-    duckdb_store.py  # DuckDBStore + list_corpus_schema, run_corpus_sql
+    sqlite_store.py  # SQLiteStore.ingest_pdf + ingest_tables_to_sqlite, list_sql_schema, run_sql
+    duckdb_store.py  # DuckDBStore.ingest_pdf (runtime corpus append) + the corpus store
+    corpus_tools.py  # backend-neutral corpus tools + get_corpus_store (CORPUS_BACKEND)
     postgres_store.py # PostgresStore (skeleton; implements two methods to go live)
   modes/             # one module per PDF mode; build_dispatch() merges them
     __init__.py      # MODE_BUILDERS registry, build_dispatch()
     _common.py       # _user_text, _resolve_pdf_path, _parse_table_indices, _text_event
-    pdf_template.py  # PdfTemplateTextAgent -> ALL_/SOME_TABLES_AS_TEXT
+    pdfpart.py       # PdfPartTextAgent -> ALL_TABLES_AS_TEXT / SOME_TABLES_AS_TEXT
     text2sql.py      # SqlModeAgent + text2sql_agent -> SQL_FROM_TEXT
-    corpus.py        # corpus_sql_agent -> QUERY_CORPUS (whole-corpus DuckDB)
-    pdfbytes.py        # PdfBytesAgent -> PDF_BYTES (gemini-only placeholder)
+    corpus.py        # build_corpus_agent -> QUERY_CORPUS (whole-corpus DuckDB)
+    pdfbytes.py      # PdfBytesAgent -> PDF_BYTES (gemini-only placeholder)
 shared/
   pdf.py             # pure pdfplumber helpers (reused by scripts/inspect_pdf.py)
 ```
@@ -134,13 +139,22 @@ Most surface is deterministic tools → tested with **no model**. Narrow branche
 Mirror the existing tool-name heuristic in current `mock_llm.py`.
 
 ## Tests (phase-based, per existing convention)
+See `docs/plans/pdf_test_plan.md` for the test-quality rationale (coverage / mode
+matrix / corpus correctness).
 ```
 tests/pdf/
+  conftest.py             # run_agent fixture + temp-dir storage isolation
   test_phase1_tools.py    # extract_tables / tables_as_text — pure, no LLM
-  test_phase2_sql.py      # ingest + run_sql with hand-written SQL — pure, no LLM
+  test_phase2_sql.py      # SQLite ingest + run_sql with hand-written SQL — pure, no LLM
   test_phase3_modes.py    # resolve_mode precedence (env/session/request)
-  test_phase4_agent.py    # coordinator routing under mock; banner + active_pdf_mode
-  eval_set_1.evalset.json # live (gemini) auto-routing + Text2SQL
+  test_phase4_agent.py    # coordinator routing under mock; full 5-mode matrix + banner/state
+  test_units.py           # index parsing, _resolve_pdf_path precedence, single/multi select
+  test_errors.py          # malformed-PDF error branches (pdfpart / text2sql / extract_tables)
+  test_duckdb_tools.py    # corpus guards + _jsonable + cross-week correctness vs golden
+  test_golden_answers.py  # MockPdfLlm correctness across text / SQL / corpus modes
+  test_upload_ingest.py   # ingest_pdf_everywhere: SQLite replace + corpus append (+ coordinator hook)
+  test_coverage_gaps.py   # remaining defensive branches, each named by file:line
+  test_live_modes.py      # live: each answering mode end-to-end on a real model
 ```
 
 ## Dependencies

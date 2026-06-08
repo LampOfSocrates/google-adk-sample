@@ -16,7 +16,7 @@ See `.env.example` for backend selection (`mock` / `gemini` / `openai` / `deepse
 
 ---
 
-## Feature status (2026-06-05)
+## Feature status (2026-06-08)
 
 | Feature | State | Notes |
 |---|---|---|
@@ -25,7 +25,7 @@ See `.env.example` for backend selection (`mock` / `gemini` / `openai` / `deepse
 | **Text-to-Diagram** (`apps/text_to_diagram`) | ✅ Done | Stateless: prose → triads → mermaid. The accreting successor is Graph Builder. |
 | **Graph Builder** (`apps/graph_builder`) | ✅ Resolver slice done | Conversational, *accreting* KG. Stage-2 **resolver** (the moat: attach-vs-new with provenance) implemented; eval set + offline scorer + demo/eval scripts in place. **Grounding is faked** (chat-only, soft claims) to isolate resolution. |
 | **Backends** (5) | ✅ Done | `mock`/`gemini`/`openai`/`deepseek`/`bedrock`, all smoke-tested 3/3 (`tests/smoke-results/`). LiteLLM providers use the prompt+parse fallback (`supports_output_schema()`). |
-| **Streamlit product UI** (`streamlit_app.py`) | ✅ pdf_insight wired in | Chat over pdf_insight / travel_planner / graph_builder / text_to_diagram. **pdf_insight: sidebar PDF uploader (ingests on upload), per-turn mode picker, and a "what's queryable" panel** (corpus coverage + table registry). |
+| **Streamlit product UI** (`streamlit_app.py`) | ✅ pdf_insight wired in | Chat over pdf_insight / travel_planner / graph_builder / text_to_diagram. **pdf_insight: sidebar PDF uploader (ingests on upload), per-turn mode picker, a top-level Query (whole-corpus) toggle, and a "what's queryable" panel** (corpus coverage + table registry). Auto mode is corpus-aware (single-PDF vs cross-report routing). |
 | **Cartograph L0** (survey/grounding agent) | 📋 Spec + fixture only | `docs/l0-survey-agent.md` spec; golden fixture `tests/fixtures/fake_system/` ready; vendor script for Online Boutique. **No survey agent/tools/test built yet** — the resolver-first pivot deferred it. |
 
 ---
@@ -101,6 +101,20 @@ the venv, e.g. `.venv\Scripts\python.exe scripts\pdf_to_duckdb.py --reset`.
 
 A running record of UI/architecture decisions, what they buy us, and what they cost —
 so future-us (and new contributors) know *why*, not just *what*. Newest first.
+
+### 2026-06-08 — pdf_insight fully wired into the product UI (closes 06-05 "owed")
+
+**Decision realized.** The two debts the 2026-06-05 "Streamlit product UI is built"
+entry left owed are now paid: the files are **committed**, and **pdf_insight is wired
+into the `APPS` map** with its own pane — sidebar PDF uploader (ingests on upload),
+per-turn mode picker, a top-level Query (whole-corpus) toggle, and a "what's
+queryable" panel (corpus coverage + table registry). `auto` mode is now
+corpus-aware: it routes single-document questions to the active PDF and
+cross-report / over-time questions to the corpus DB.
+
+**Still owed.** The pane uses the generic chat surface — no in-document **PDF viewer
++ citation highlight** yet (the Streamlit decision below flags `streamlit-pdf-viewer`
+for this). `LLM_GETS_PDF_BYTES` remains a gemini-only placeholder.
 
 ### 2026-06-05 — Cartograph: build the **resolver (L1) first**, not the survey (L0)
 

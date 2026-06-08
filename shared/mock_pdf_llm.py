@@ -2,26 +2,25 @@
 
 The generic `MockLlm` runs the agent graph offline but is too dumb for pdf_insight:
 in SQL mode it just does `SELECT * ... LIMIT 5` and echoes the raw rows. This
-subclass *knows the domain* (a derivatives-desk risk report: Greeks delta/gamma/
-vega/theta/rho + notional/var/pnl, sliced by region/asset/desk/underlying/tenor/
-currency/date) and so produces **golden-accurate** offline behavior:
+subclass *knows the domain* (a derivatives-desk risk report whose tables carry the
+Greeks delta/vega sliced by region) and so produces **golden-accurate** offline
+behavior:
 
   * SQL mode (LLM_MAKES_SQL_FROM_CHAT) and corpus mode (LLM_QUERIES_CORPUS):
       read the schema returned by list_sql_schema / list_corpus_schema, parse the
-      question into (measure, dimension, aggregation, filters), emit a real
-      read-only SELECT, and then phrase the returned rows into a sentence. The
+      question into an intent (measure, dimension, filters, top/trend flags), emit
+      a real read-only SELECT, and phrase the returned rows into a sentence. The
       tool runs the SQL for real, so the numbers are the true numbers.
   * tables-as-text modes + the auto router: parse the injected `tables_as_text`
       block (or the extract_tables result) and compute the answer in Python.
 
-It is heuristic, not a model: intent is matched against domain synonym/value
-vocab. Unrecognized requests fall back to the generic `MockLlm`. Used explicitly
-by the pdf_insight tests — the default `LLM_BACKEND=mock` stays the plain mock.
+Scope is deliberately narrow: it answers exactly the intents the pdf_insight
+golden tests assert — total/by-region/most/trend over vega and delta. The
+vocabulary is fully table-driven (`_MEASURES`/`_DIMENSIONS`/`_VALUES` below): to
+teach the mock a new word, add a row, not a branch. Anything it can't express
+falls back to the generic `MockLlm`. Used only by the pdf_insight tests — the
+default `LLM_BACKEND=mock` stays the plain mock.
 """
-# TODO(simplify): the NL -> (measure, dimension, aggregation, filter) heuristic and
-# its synonym/value vocab have grown hard to follow. Narrow it to the intents the
-# golden tests actually assert, and table-drive the synonym matching, instead of
-# expanding the hand-rolled parser.
 from __future__ import annotations
 
 import re
@@ -37,43 +36,22 @@ from .mock_llm import (
     _text_part,
 )
 
-# question word -> canonical measure key (the key is also the column substring).
-_MEASURE_SYNONYMS = {
-    "vega": "vega", "delta": "delta", "gamma": "gamma", "theta": "theta",
-    "rho": "rho", "notional": "notional",
-    "var": "var", "value at risk": "var", "value-at-risk": "var",
-    "pnl": "pnl", "p&l": "pnl", "p & l": "pnl", "profit": "pnl",
-    "position": "pos", "positions": "pos", "how many": "pos",
+# --- the whole question vocabulary, table-driven (extend a table, not the parser) ---
+# measure phrase -> column substring (also used as the display label).
+_MEASURES = {"vega": "vega", "delta": "delta"}
+# dimension phrase -> column substring to GROUP BY.
+_DIMENSIONS = {"region": "region"}
+# filter phrase -> (column substring, properly-cased SQL value). Lets "Americas
+# vega" become a WHERE clause.
+_VALUES = {
+    "americas": ("region", "Americas"),
+    "emea": ("region", "EMEA"),
+    "apac": ("region", "APAC"),
 }
-# display label for an answer sentence.
-_MEASURE_LABEL = {"var": "VaR", "pnl": "P&L", "pos": "positions"}
-# question word -> (dimension key, column substring used to find the column).
-_DIM_SYNONYMS = {
-    "region": ("region", "region"),
-    "asset class": ("asset_class", "asset"), "asset": ("asset_class", "asset"),
-    "desk": ("desk", "desk"),
-    "underlying": ("underlying", "underlying"), "ticker": ("underlying", "underlying"),
-    "tenor": ("tenor", "tenor"), "maturity": ("tenor", "tenor"),
-    "currency": ("currency", "currency"), "ccy": ("currency", "currency"),
-    "book": ("book", "book"),
-}
-# known dimension VALUES, so "Americas vega" / "SPX" / "Rates desk" become filters.
-# Priority order disambiguates a value living in two dims (e.g. "Rates").
-_VALUE_VOCAB = [
-    ("region", ["Americas", "EMEA", "APAC"]),
-    ("currency", ["USD", "EUR", "GBP", "JPY"]),
-    ("underlying", ["SPX", "ESTOXX", "NKY", "FTSE", "UST10Y", "Bund", "JGB10Y",
-                    "Gilt", "EUR/USD", "USD/JPY", "GBP/USD", "CDX-IG",
-                    "iTraxx-Main", "WTI", "Gold", "Brent"]),
-    ("tenor", ["0-1M", "1-3M", "3-6M", "6-12M", "1Y+"]),
-    ("asset_class", ["Equity", "Rates", "FX", "Credit", "Commodity"]),
-    ("desk", ["Flow Equity", "Exotics", "Rates", "FX Options", "Credit"]),
-]
-_TREND_WORDS = ("trend", "over time", "weekly", "by week", "each week", "history",
-                "historical", "week over week", "week-over-week")
-_AVG_WORDS = ("average", "avg", "mean")
-_MAX_WORDS = ("most", "highest", "largest", "biggest", "max", "maximum", "top")
-_MIN_WORDS = ("least", "lowest", "smallest", "min", "minimum", "most negative")
+# phrases that flip a flag. Matched as substrings (so "trended" hits "trend").
+_TREND_WORDS = ("trend", "over time", "over the weeks", "each week",
+                "week over week", "week-over-week")
+_TOP_WORDS = ("most", "highest", "largest", "biggest", "max", "maximum", "top")
 
 
 def _fmt_num(v) -> str:
@@ -95,37 +73,19 @@ def _find_col(columns, substr: str):
 
 
 def _parse_intent(text: str) -> dict:
-    """Turn a question into {measure, dim, dim_col_key, agg, order, limit, filters}."""
+    """Turn a question into {measure, dim, top, trend, filters} via the vocab tables."""
     low = text.lower()
-    measure = next((m for phrase, m in _MEASURE_SYNONYMS.items() if phrase in low), None)
-
-    dim = dim_key = None
-    for phrase, (d, colkey) in _DIM_SYNONYMS.items():
-        if re.search(rf"\b{re.escape(phrase)}\b", low):
-            dim, dim_key = d, colkey
-            break
-
-    trend = any(w in low for w in _TREND_WORDS)
-    agg = "avg" if any(w in low for w in _AVG_WORDS) else "sum"
-
-    order = limit = None
-    m = re.search(r"top\s+(\d+)", low)
-    if m:
-        order, limit = "desc", int(m.group(1))
-    elif any(w in low for w in _MIN_WORDS):
-        order, limit = "asc", 1
-    elif any(w in low for w in _MAX_WORDS):
-        order, limit = "desc", 1
-
-    # value filters (e.g. region='Americas'); dedupe a value shared across dims.
-    filters, claimed = {}, set()
-    for d, vals in _VALUE_VOCAB:
-        for v in vals:
-            if v.lower() in low and v.lower() not in claimed:
-                filters[d] = v
-                claimed.add(v.lower())
-    return {"measure": measure, "dim": dim, "dim_col_key": dim_key, "agg": agg,
-            "order": order, "limit": limit, "trend": trend, "filters": filters}
+    measure = next((col for phrase, col in _MEASURES.items() if phrase in low), None)
+    dim = next((col for phrase, col in _DIMENSIONS.items()
+                if re.search(rf"\b{re.escape(phrase)}\b", low)), None)
+    filters = {col: value for phrase, (col, value) in _VALUES.items() if phrase in low}
+    return {
+        "measure": measure,
+        "dim": dim,
+        "top": any(w in low for w in _TOP_WORDS),
+        "trend": any(w in low for w in _TREND_WORDS),
+        "filters": filters,
+    }
 
 
 # ---------------------------------------------------------------- SQL modes ---
@@ -139,25 +99,26 @@ def _normalize_schema(fr) -> list[dict]:
     return []
 
 
-def _pick_table(schema, measure_key, dim_col_key):
-    cands = [t for t in schema if _find_col(t["columns"], measure_key)]
+def _pick_table(schema, measure_sub, dim_sub):
+    """First table carrying the measure (and the dimension too, if one was asked)."""
+    cands = [t for t in schema if _find_col(t["columns"], measure_sub)]
     if not cands:
         return None
-    if dim_col_key:
-        both = [t for t in cands if _find_col(t["columns"], dim_col_key)]
+    if dim_sub:
+        both = [t for t in cands if _find_col(t["columns"], dim_sub)]
         if both:
             return both[0]
     return cands[0]
 
 
-def _build_sql(intent: dict, schema: list[dict], is_corpus: bool):
-    """Return (sql, shape) or (None, None) if the intent can't be expressed."""
+def _build_sql(intent: dict, schema: list[dict], is_corpus: bool) -> str | None:
+    """A single read-only SELECT for the intent, or None if it can't be expressed."""
     meas = intent["measure"]
     if not meas:
-        return None, None
-    table = _pick_table(schema, meas, intent["dim_col_key"])
+        return None
+    table = _pick_table(schema, meas, intent["dim"])
     if not table:
-        return None, None
+        return None
     cols, name = table["columns"], table["name"]
     mcol = _find_col(cols, meas)
     # Corpus columns are already DOUBLE; the single-PDF SQLite stores cells as TEXT
@@ -165,49 +126,42 @@ def _build_sql(intent: dict, schema: list[dict], is_corpus: bool):
     # strip the commas and CAST before aggregating.
     mexpr = f'"{mcol}"' if is_corpus else f'CAST(REPLACE("{mcol}", \',\', \'\') AS REAL)'
 
-    # exclude each table's own subtotal: corpus has a boolean flag; sqlite doesn't.
+    # Exclude each table's own subtotal: corpus has a boolean flag; sqlite doesn't.
     label_col = cols[0] if cols else None
     excl = "NOT is_total" if is_corpus else (f'"{label_col}" <> \'Total\'' if label_col else "1=1")
-
-    _FILTER_COLKEY = {"asset_class": "asset"}  # dim key -> column substring
     wheres = [excl]
-    for d, v in intent["filters"].items():
-        col = _find_col(cols, _FILTER_COLKEY.get(d, d))
+    for col_sub, value in intent["filters"].items():
+        col = _find_col(cols, col_sub)
         if col:
-            wheres.append(f"\"{col}\" = '{v}'")
+            wheres.append(f"\"{col}\" = '{value}'")
     where = " AND ".join(wheres)
-    agg = "AVG" if intent["agg"] == "avg" else "SUM"
 
     if intent["trend"] and is_corpus:
-        return (f'SELECT report_date, {agg}({mexpr}) AS {meas} FROM "{name}" '
-                f"WHERE {where} GROUP BY report_date ORDER BY report_date"), "trend"
+        return (f'SELECT report_date, SUM({mexpr}) AS {meas} FROM "{name}" '
+                f"WHERE {where} GROUP BY report_date ORDER BY report_date")
 
-    dim_col = _find_col(cols, intent["dim_col_key"]) if intent["dim_col_key"] else None
+    dim_col = _find_col(cols, intent["dim"]) if intent["dim"] else None
     if dim_col:
-        order = intent["order"] or "desc"
-        limit = f" LIMIT {intent['limit']}" if intent["limit"] else ""
-        return (f'SELECT "{dim_col}", {agg}({mexpr}) AS {meas} FROM "{name}" '
-                f'WHERE {where} GROUP BY "{dim_col}" ORDER BY {meas} {order}{limit}'), \
-               ("extreme" if intent["limit"] == 1 else "grouped")
+        limit = " LIMIT 1" if intent["top"] else ""
+        return (f'SELECT "{dim_col}", SUM({mexpr}) AS {meas} FROM "{name}" '
+                f'WHERE {where} GROUP BY "{dim_col}" ORDER BY {meas} DESC{limit}')
 
-    return f'SELECT {agg}({mexpr}) AS {meas} FROM "{name}" WHERE {where}', "scalar"
+    return f'SELECT SUM({mexpr}) AS {meas} FROM "{name}" WHERE {where}'
 
 
 def _format_rows(intent: dict, result: dict) -> str:
     rows = result.get("rows") or []
-    disp = _MEASURE_LABEL.get(intent["measure"], intent["measure"] or "value")
+    disp = intent["measure"] or "value"
     flt = "".join(f" for {v}" for v in intent["filters"].values())
     if not rows:
         return f"No {disp} found{flt}."
-    if len(rows) == 1 and len(rows[0]) == 1:  # scalar
-        word = "Average" if intent["agg"] == "avg" else "Total"
-        return f"{word} {disp}{flt} is {_fmt_num(rows[0][0])}."
+    if len(rows) == 1 and len(rows[0]) == 1:  # scalar SUM
+        return f"Total {disp}{flt} is {_fmt_num(rows[0][0])}."
     if intent["trend"]:
         seq = " → ".join(f"{r[0]}: {_fmt_num(r[1])}" for r in rows)
         return f"{disp.capitalize()}{flt} by week — {seq}."
-    if intent["limit"] == 1 and len(rows[0]) >= 2:
-        sup = "lowest" if intent["order"] == "asc" else "highest"
-        return f"{rows[0][0]} has the {sup} {disp} ({_fmt_num(rows[0][1])})."
+    if intent["top"] and len(rows[0]) >= 2:
+        return f"{rows[0][0]} has the highest {disp} ({_fmt_num(rows[0][1])})."
     body = ", ".join(f"{r[0]} {_fmt_num(r[1])}" for r in rows[:8])
     return f"{disp.capitalize()} by {intent['dim']}: {body}."
 
@@ -255,11 +209,11 @@ def _answer_from_tables(intent: dict, tables: list[dict]) -> str | None:
     meas = intent["measure"]
     if not meas:
         return None
-    # pick the table that has the measure (and the dimension, if asked).
+    # pick the table that has the measure (and the dimension too, if one was asked).
     chosen = None
     for t in tables:
         if _find_col(t["header"], meas):
-            if not intent["dim_col_key"] or _find_col(t["header"], intent["dim_col_key"]):
+            if not intent["dim"] or _find_col(t["header"], intent["dim"]):
                 chosen = t
                 break
             chosen = chosen or t
@@ -275,25 +229,22 @@ def _answer_from_tables(intent: dict, tables: list[dict]) -> str | None:
         except (ValueError, AttributeError):
             return None
 
-    disp = _MEASURE_LABEL.get(meas, meas)
-    if intent["dim_col_key"]:
-        di = hdr.index(_find_col(hdr, intent["dim_col_key"]))
+    disp = meas
+    if intent["dim"]:
+        di = hdr.index(_find_col(hdr, intent["dim"]))
         pairs = [(r[di], num(r[mi])) for r in data if mi < len(r) and num(r[mi]) is not None]
         if not pairs:
             return None
-        if intent["limit"] == 1:
-            best = (min if intent["order"] == "asc" else max)(pairs, key=lambda p: p[1])
-            sup = "lowest" if intent["order"] == "asc" else "highest"
-            return f"{best[0]} has the {sup} {disp} ({_fmt_num(best[1])})."
-        pairs.sort(key=lambda p: p[1], reverse=(intent["order"] != "asc"))
+        if intent["top"]:
+            best = max(pairs, key=lambda p: p[1])
+            return f"{best[0]} has the highest {disp} ({_fmt_num(best[1])})."
+        pairs.sort(key=lambda p: p[1], reverse=True)
         body = ", ".join(f"{a} {_fmt_num(b)}" for a, b in pairs[:8])
         return f"{disp.capitalize()} by {intent['dim']}: {body}."
     vals = [num(r[mi]) for r in data if mi < len(r) and num(r[mi]) is not None]
     if not vals:
         return None
-    total = sum(vals) / len(vals) if intent["agg"] == "avg" else sum(vals)
-    word = "Average" if intent["agg"] == "avg" else "Total"
-    return f"{word} {disp} is {_fmt_num(total)}."
+    return f"Total {disp} is {_fmt_num(sum(vals))}."
 
 
 class MockPdfLlm(MockLlm):
@@ -315,7 +266,7 @@ class MockPdfLlm(MockLlm):
         if fr is not None and fr.name != "transfer_to_agent":
             if fr.name in ("list_sql_schema", "list_corpus_schema"):
                 schema = _normalize_schema(fr)
-                sql, _ = _build_sql(_parse_intent(user_text), schema, is_corpus)
+                sql = _build_sql(_parse_intent(user_text), schema, is_corpus)
                 run_tool = "run_corpus_sql" if is_corpus else "run_sql"
                 if sql:
                     return self._log(f"{run_tool}:domain", _call_part(run_tool, {"query": sql}))

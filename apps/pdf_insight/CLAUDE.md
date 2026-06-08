@@ -1,7 +1,7 @@
 # pdf_insight — scope note
 
 Multi-mode PDF Q&A agent: one `PdfInsightAgent` (custom `BaseAgent`) routes a
-question to one of four strategies. Full design: `docs/plans/pdf_insight.md`.
+question to one of five strategies. Full design: `docs/plans/pdf_insight.md`.
 
 ## Boundary (what to touch)
 - This app = `apps/pdf_insight/` + `tests/pdf/`. Layout: `agent.py` assembles
