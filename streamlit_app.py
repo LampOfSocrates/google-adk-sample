@@ -14,6 +14,7 @@ import asyncio
 import importlib
 import os
 import re
+import sys
 import time
 
 import certifi
@@ -84,7 +85,16 @@ def _get_runner(app: str, backend_name: str):
         return st.session_state.runner, st.session_state.session_id
 
     os.environ["LLM_BACKEND"] = backend_name
-    module = importlib.reload(importlib.import_module(APPS[app]))
+    # Reload the WHOLE app package, not just agent.py. `importlib.reload(agent)`
+    # keeps cached coordinator/modes/stores, so edits there (e.g. the router's
+    # tool list) are missed -> stale 'Tool X not found. Available: ...'. Purging
+    # the package makes the re-import fully fresh so the agent rebinds the new
+    # model AND the current tools/instructions. (Runs only on app/backend switch
+    # or after 'New conversation', not every rerun.)
+    pkg = APPS[app].rsplit(".", 1)[0]  # "apps.pdf_insight.agent" -> "apps.pdf_insight"
+    for _name in [m for m in list(sys.modules) if m == pkg or m.startswith(pkg + ".")]:
+        del sys.modules[_name]
+    module = importlib.import_module(APPS[app])
     runner = InMemoryRunner(agent=module.root_agent, app_name=app)
     session = _loop().run_until_complete(
         runner.session_service.create_session(app_name=app, user_id=USER_ID)
