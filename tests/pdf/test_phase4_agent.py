@@ -48,6 +48,19 @@ async def test_pinned_some_tables_publishes_table_text(converse):
     assert "Table 0" in state["pdf_tables_text"]
 
 
+async def test_some_tables_override_selects_only_that_table(converse):
+    """The 'some' distinction: a per-request `table N` override must publish ONLY
+    that table to the answerer — not every table (that would be the 'all' mode)."""
+    answers, state = await converse(
+        root_agent,
+        [f"mode: {config.SOME_TABLES_AS_TEXT} table 2 holdings"],
+    )
+    text = state["pdf_tables_text"]
+    assert "Table 2" in text          # the requested table is present...
+    assert "Table 0" not in text      # ...and the others are excluded (true subset)
+    assert "Table 1" not in text
+
+
 async def test_pinned_stash_mode_routes(converse):
     # Routing-deep only: under the plain MockLlm the stash agent just replies; the
     # point is the coordinator dispatches to QUERY_STASH without crashing.

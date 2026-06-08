@@ -30,3 +30,5 @@ tests/pdf/samples/*.golden.json
 data/pdf_stash.duckdb
 
 .coverage
+SENTINEL.sqlite
+*.sqlite

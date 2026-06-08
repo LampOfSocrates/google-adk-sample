@@ -18,8 +18,9 @@ question to one of four strategies. Full design: `docs/plans/pdf_insight.md`.
   dependencies of this app.
 
 ## Run / test
-- Tests (offline, no API key): `pytest tests/pdf` — runs under `LLM_BACKEND=mock`.
-- Live: set `LLM_BACKEND=gemini` (+ key). `adk web` discovers `root_agent`.
+- Tests (offline, no API key): `pytest -m "not live" tests/pdf` — runs under `LLM_BACKEND=mock`.
+- Live smoke (one per answering mode, needs a key): `pytest -m live tests/pdf`.
+- Live app: set `LLM_BACKEND=gemini` (+ key). `adk web` discovers `root_agent`.
 
 ## Invariant (don't break)
 Deterministic work (PDF parse, SQLite ingest, SQL exec, mode-when-pinned) lives in

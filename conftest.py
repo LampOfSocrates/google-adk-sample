@@ -11,6 +11,16 @@ from google.genai import types
 
 load_dotenv()
 
+# A stray SSL_CERT_FILE (e.g. a leftover miniconda path) makes google-genai's TLS
+# setup raise FileNotFoundError before any live request leaves the box. If it
+# points at a missing file, repoint it at certifi's bundle. No-op when unset or
+# already valid, so this is harmless on CI / other machines.
+_cert = os.environ.get("SSL_CERT_FILE")
+if _cert and not os.path.exists(_cert):
+    import certifi
+
+    os.environ["SSL_CERT_FILE"] = certifi.where()
+
 APP_NAME = "weather_agent"
 
 
