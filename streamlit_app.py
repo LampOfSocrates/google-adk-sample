@@ -226,18 +226,23 @@ with st.sidebar:
         st.caption("_mock — offline, free, streaming simulated_")
     else:
         st.caption(f"_live: **{chosen}** — uses its API key + real tokens_")
+
+    # Query mode sits right under Backend: it's a top-level control that governs
+    # every turn (with or without an upload), not a PDF-upload afterthought.
+    pdf_mode_label = None
+    if app == "pdf_insight":
+        pdf_mode_label = st.selectbox("Query mode", list(PDF_MODES), key="pdf_mode")
+
     if st.button("🗑️ New conversation", width="stretch"):
         for k in ("runner", "session_id", "messages", "app", "backend", "debug_turns"):
             st.session_state.pop(k, None)
 
-    pdf_mode_label = None
     if app == "pdf_insight":
         st.divider()
         st.subheader("📄 PDF Insight")
         uploads = st.file_uploader("Upload PDF(s)", type="pdf",
                                    accept_multiple_files=True, key="pdf_uploads")
         _ingest_uploads(uploads)
-        pdf_mode_label = st.selectbox("Query mode", list(PDF_MODES), key="pdf_mode")
         st.caption("Each upload replaces the single-PDF SQLite and **appends** to the "
                    "growing corpus.")
 
@@ -270,12 +275,13 @@ with tab_chat:
     # ------------------------------------------------------------- new turn ---
     if prompt:
         # For pdf_insight, fold the sidebar's mode choice into the message as a
-        # `mode:` directive (the coordinator parses it); display stays clean.
+        # `mode:` directive (the coordinator parses it); display stays clean. Always
+        # explicit — including `mode: auto` — so the dropdown is the authoritative
+        # selection every turn, not a default the precedence chain falls through to.
         send_text = prompt
         if app == "pdf_insight" and pdf_mode_label:
             mode = PDF_MODES[pdf_mode_label]
-            if mode != pdf_config.AUTO:
-                send_text = f"mode: {mode} {prompt}"
+            send_text = f"mode: {mode} {prompt}"
 
         st.session_state.messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"):

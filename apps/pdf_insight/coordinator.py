@@ -23,6 +23,7 @@ from google.adk.events import Event
 from . import config
 from .ingest import ingest_pdf_everywhere
 from .modes._common import _resolve_pdf_path, _text_event, _user_text
+from .stores import list_corpus_schema, run_corpus_sql
 from .tools import extract_tables, set_pdf_mode
 
 def build_router() -> LlmAgent:
@@ -33,12 +34,26 @@ def build_router() -> LlmAgent:
     return LlmAgent(
         name="pdf_router",
         model=get_model(),
-        description="Auto mode: reasons about the question and pulls tables as needed.",
+        description="Auto mode: answers from the active PDF or the whole-corpus DB, "
+                    "whichever the question needs.",
+        # The router picks the data source by question shape: single-document questions
+        # read the active PDF (extract_tables); questions spanning reports or asking
+        # about change over time use the corpus DB (the only source holding every week).
+        # Keep extract_tables FIRST so the offline MockLlm — which has no corpus branch
+        # — still defaults to the single-PDF path and existing routing tests hold.
         instruction=(
-            "Answer questions about the active PDF. Call extract_tables to read its "
-            "tables, then answer from them. You may pin a strategy with set_pdf_mode."
+            "You answer questions about PDF reports. Choose the data source from the "
+            "question:\n"
+            "- About THE current/uploaded document (this report, this statement, a named "
+            "table) -> call extract_tables, then answer from its tables.\n"
+            "- Spanning MANY reports or asking about change OVER TIME (a trend, timeseries, "
+            "week-over-week, 'since', 'history', 'each week/month') -> use the corpus: call "
+            "list_corpus_schema FIRST, then write ONE read-only SELECT and call "
+            "run_corpus_sql (filter or GROUP BY report_date; exclude subtotals with "
+            "WHERE NOT is_total before SUM/AVG), then answer from the rows.\n"
+            "You may also pin a strategy for the rest of the session with set_pdf_mode."
         ),
-        tools=[extract_tables, set_pdf_mode],
+        tools=[extract_tables, set_pdf_mode, list_corpus_schema, run_corpus_sql],
     )
 
 
