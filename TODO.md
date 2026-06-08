@@ -25,3 +25,25 @@ Tracked follow-ups (not blocking; each is self-contained).
   category→measure. Zero new deps (native Vega-Lite); Plotly (`st.plotly_chart`)
   is a one-line upgrade for extra polish. Do NOT hand-roll HTML/SVG.
   Mirror the existing ```mermaid rendering pattern in `streamlit_app.py`.
+
+## Simplification / tech debt
+
+- [ ] **Simplify `scripts/pdf_creator.py`** (`# TODO(simplify)` at line 56).
+  The synthetic-PDF generator has grown to 16 table builders across two render
+  styles (ruled/borderless) plus a multi-flag CLI, while the suite uses only a
+  slice (the committed all-ruled fixture). Trim the table catalog + CLI surface to
+  what's actually exercised, and fold the ruled/borderless split into one path.
+
+- [ ] **Simplify `shared/mock_pdf_llm.py`** (`# TODO(simplify)` at line 21).
+  The NL → (measure, dimension, aggregation, filter) heuristic and its
+  synonym/value vocab have grown hard to follow. Narrow it to the intents the
+  golden tests actually assert, and table-drive the synonym matching, instead of
+  expanding the hand-rolled parser.
+
+## Known deferred (not TODO-marked, for visibility)
+
+- [ ] **`PostgresStore` implementation** (`apps/pdf_insight/stores/postgres_store.py`).
+  A working skeleton: `_connect_readonly`, `list_schema`, and `ingest_pdf` raise
+  `NotImplementedError`. Implement when `psycopg` is added — open the DSN, `SET
+  TRANSACTION READ ONLY`, and read/write the canonical `documents`/`pdf_tables`/`tNN`
+  schema. The abstraction + `CORPUS_BACKEND=postgres` selector are already in place.
