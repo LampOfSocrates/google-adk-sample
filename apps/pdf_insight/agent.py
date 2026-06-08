@@ -18,11 +18,11 @@ in code/tools, never in an LlmAgent. `root_agent` is what ADK discovers.
 """
 from __future__ import annotations
 
-from .coordinator import PdfInsightAgent, router_agent
+from .coordinator import PdfInsightAgent, build_router
 from .modes import build_dispatch
 
 root_agent = PdfInsightAgent(
     name="pdf_insight",
-    router=router_agent,
+    router=build_router(),
     dispatch=build_dispatch(),
 )

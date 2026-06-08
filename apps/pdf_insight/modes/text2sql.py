@@ -14,22 +14,37 @@ from google.adk.agents.invocation_context import InvocationContext
 from google.adk.events import Event, EventActions
 
 from .. import config, storage
-from ..stores.sqlite_store import ingest_tables_to_sqlite, list_sql_schema, run_sql
+from ..stores.sqlite_store import (
+    SQLiteStore,
+    ingest_tables_to_sqlite,
+    list_sql_schema,
+    run_sql,
+)
 from ._common import _text_event
+
+_TEXT2SQL_GUIDANCE = (
+    "First call list_sql_schema to see the tables and columns. Then write a "
+    "single SQLite SELECT, call run_sql with it, and answer from the rows. "
+    "Never write or modify data."
+)
+
 
 def _text2sql_agent() -> LlmAgent:
     """Fresh Text2SQL specialist per call. An ADK agent may attach to only ONE
     parent, so build() must not reuse a module-level singleton (else a second
-    build() — e.g. in a test — fails with a parent-conflict ValidationError)."""
+    build() — e.g. in a test — fails with a parent-conflict ValidationError).
+
+    The store's dialect_hint is appended (same contract as corpus.py): SQLite
+    stores cells as TEXT with thousands-commas, so without the hint a live model
+    would SUM them as 0/garbage. This mode is always SQLite, so we read the hint
+    off the class."""
+    instruction = _TEXT2SQL_GUIDANCE + (
+        f"\n{SQLiteStore.dialect_hint}" if SQLiteStore.dialect_hint else "")
     return LlmAgent(
         name="text2sql_agent",
         model=get_model(),
         description="Writes ONE read-only SQLite SELECT to answer questions over tables.",
-        instruction=(
-            "First call list_sql_schema to see the tables and columns. Then write a "
-            "single SQLite SELECT, call run_sql with it, and answer from the rows. "
-            "Never write or modify data."
-        ),
+        instruction=instruction,
         tools=[list_sql_schema, run_sql],
     )
 
@@ -74,4 +89,4 @@ class SqlModeAgent(BaseAgent):
 
 def build() -> dict:
     """Return {mode_constant: agent} for the SQL strategy."""
-    return {config.SQL_FROM_TEXT: SqlModeAgent("sql_mode", _text2sql_agent())}
+    return {config.SQL_FROM_TEXT: SqlModeAgent("text2sql", _text2sql_agent())}

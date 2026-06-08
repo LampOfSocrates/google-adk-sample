@@ -41,7 +41,7 @@ def build_corpus_agent(store: SqlStore) -> LlmAgent:
     except for whatever SQL-dialect note the backend actually needs."""
     instruction = _CORPUS_GUIDANCE + (f"\n{store.dialect_hint}" if store.dialect_hint else "")
     return LlmAgent(
-        name="corpus_sql_agent",
+        name="corpus",
         model=get_model(),
         description="Answers questions across the whole report corpus via read-only SQL.",
         instruction=instruction,

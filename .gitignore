@@ -32,3 +32,4 @@ data/pdf_corpus.duckdb
 .coverage
 SENTINEL.sqlite
 *.sqlite
+data/uploads/

@@ -34,4 +34,4 @@ class PdfBytesAgent(BaseAgent):
 
 def build() -> dict:
     """Return {mode_constant: agent} for the native-bytes strategy."""
-    return {config.PDF_BYTES: PdfBytesAgent(name="pdf_bytes_mode")}
+    return {config.PDF_BYTES: PdfBytesAgent(name="pdfbytes")}

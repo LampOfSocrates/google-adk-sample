@@ -77,7 +77,7 @@ def build() -> dict:
     """Return {mode_constant: agent} for the two tables-as-text strategies."""
     return {
         config.ALL_TABLES_AS_TEXT: PdfPartTextAgent(
-            "tables_all_mode", _make_answerer("answer_all")),
+            "pdfpart_all", _make_answerer("pdfpart_all_agent")),
         config.SOME_TABLES_AS_TEXT: PdfPartTextAgent(
-            "tables_some_mode", _make_answerer("answer_some"), select=[0]),
+            "pdfpart_some", _make_answerer("pdfpart_some_agent"), select=[0]),
     }

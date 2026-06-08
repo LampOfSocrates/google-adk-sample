@@ -34,14 +34,30 @@ from shared.debug import fetch_session_info, render_debug_tab  # noqa: E402
 from shared.model import backend  # noqa: E402
 from shared.ui_stream import stream_ui_events  # noqa: E402
 
+from apps.pdf_insight import config as pdf_config  # noqa: E402
+from apps.pdf_insight.ingest import ingest_pdf_everywhere  # noqa: E402
+from apps.pdf_insight.stores import SQLiteStore, get_corpus_store  # noqa: E402
+
 # name -> module exposing `root_agent`. Each is a separate ADK app/session.
 APPS = {
+    "pdf_insight": "apps.pdf_insight.agent",
     "travel_planner": "apps.travel_planner.agent",
     "graph_builder": "apps.graph_builder.agent",
     "text_to_diagram": "apps.text_to_diagram.agent",
 }
 USER_ID = "you"
 BACKENDS = ["mock", "gemini", "openai", "deepseek", "bedrock"]
+UPLOAD_DIR = os.path.join("data", "uploads")
+
+# Friendly label -> mode constant the coordinator understands (via a `mode:` directive).
+PDF_MODES = {
+    "auto — let the agent decide": pdf_config.AUTO,
+    "all tables → text": pdf_config.ALL_TABLES_AS_TEXT,
+    "some tables → text": pdf_config.SOME_TABLES_AS_TEXT,
+    "SQL over THIS pdf (SQLite)": pdf_config.SQL_FROM_TEXT,
+    "SQL over the WHOLE corpus (DuckDB)": pdf_config.QUERY_CORPUS,
+    "raw pdf bytes (gemini only)": pdf_config.PDF_BYTES,
+}
 
 
 def _loop() -> asyncio.AbstractEventLoop:
@@ -80,17 +96,6 @@ def _get_runner(app: str, backend_name: str):
     st.session_state.messages = []
     st.session_state.debug_turns = []
     return runner, session.id
-
-
-def _drain(agen):
-    """Pump an async generator on the persistent loop, yielding items synchronously
-    so Streamlit can render each as it arrives."""
-    loop = _loop()
-    while True:
-        try:
-            yield loop.run_until_complete(agen.__anext__())
-        except StopAsyncIteration:
-            return
 
 
 def _pretty_tool(name: str, args: dict | None) -> str:
@@ -152,6 +157,59 @@ def _render_steps(steps: list[dict], container) -> None:
             container.json(s["tool_result"])
 
 
+def _ingest_uploads(files) -> None:
+    """Ingest any not-yet-seen uploaded PDFs into BOTH backends (SQLite replace +
+    corpus append), set the active PDF for the coordinator (PDF_PATH), and remember
+    which files we've processed so reruns don't re-ingest. Idempotent either way."""
+    seen = st.session_state.setdefault("pdf_uploaded", set())
+    pdf_state = st.session_state.setdefault("pdf_state", {})
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
+    for f in files or []:
+        if f.name in seen:
+            continue
+        path = os.path.join(UPLOAD_DIR, f.name)
+        with open(path, "wb") as out:
+            out.write(f.getbuffer())
+        try:
+            summary = ingest_pdf_everywhere(path, pdf_state)
+            st.sidebar.success(
+                f"📄 {f.name}: sqlite {summary['sqlite']['status']}, "
+                f"corpus {summary['corpus']['status']}")
+        except Exception as e:  # noqa: BLE001 - surface, keep the app alive
+            st.sidebar.error(f"Could not ingest {f.name}: {e}")
+        os.environ["PDF_PATH"] = path  # the coordinator's default active PDF
+        seen.add(f.name)
+
+
+def _pdf_overview() -> None:
+    """Show what's queryable right now: the corpus coverage + table registry, and
+    the active single-PDF SQLite schema. Helps the user see what to ask."""
+    with st.expander("📄 What's queryable", expanded=True):
+        active = os.environ.get("PDF_PATH")
+        st.caption(f"Active PDF (single-doc modes): **{os.path.basename(active)}**"
+                   if active else "No PDF uploaded yet — upload one in the sidebar.")
+        pdf_state = st.session_state.get("pdf_state", {})
+
+        corpus = get_corpus_store(pdf_state).list_schema()
+        if corpus["status"] == "success":
+            docs = corpus["documents"]
+            st.markdown(f"**Corpus** — {docs['count']} report(s), "
+                        f"{docs['from']} → {docs['to']}")
+            st.dataframe(
+                [{"table": t["table"], "title": t["title"],
+                  "columns": ", ".join(t["columns"])} for t in corpus["tables"]],
+                width="stretch", hide_index=True)
+        else:
+            st.caption(f"Corpus: {corpus['error_message']}")
+
+        db = pdf_state.get("db_path")
+        if db:
+            sql = SQLiteStore(db).list_schema()
+            if sql["status"] == "success":
+                st.markdown("**This PDF (SQLite)** — "
+                            + ", ".join(t["table"] for t in sql["schema"]))
+
+
 # ---------------------------------------------------------------- page setup ---
 st.set_page_config(page_title="ADK Chat", page_icon="🤖", layout="centered")
 
@@ -168,9 +226,20 @@ with st.sidebar:
         st.caption("_mock — offline, free, streaming simulated_")
     else:
         st.caption(f"_live: **{chosen}** — uses its API key + real tokens_")
-    if st.button("🗑️ New conversation", use_container_width=True):
+    if st.button("🗑️ New conversation", width="stretch"):
         for k in ("runner", "session_id", "messages", "app", "backend", "debug_turns"):
             st.session_state.pop(k, None)
+
+    pdf_mode_label = None
+    if app == "pdf_insight":
+        st.divider()
+        st.subheader("📄 PDF Insight")
+        uploads = st.file_uploader("Upload PDF(s)", type="pdf",
+                                   accept_multiple_files=True, key="pdf_uploads")
+        _ingest_uploads(uploads)
+        pdf_mode_label = st.selectbox("Query mode", list(PDF_MODES), key="pdf_mode")
+        st.caption("Each upload replaces the single-PDF SQLite and **appends** to the "
+                   "growing corpus.")
 
 runner, session_id = _get_runner(app, chosen)
 st.session_state.setdefault("debug_turns", [])
@@ -182,6 +251,9 @@ prompt = st.chat_input("Message…")
 tab_chat, tab_debug = st.tabs(["💬 Chat", "🔍 Debug"])
 
 with tab_chat:
+    if app == "pdf_insight":
+        _pdf_overview()
+
     # Replay history (each turn keeps its collapsed "Thinking" block).
     for i, m in enumerate(st.session_state.messages):
         with st.chat_message(m["role"]):
@@ -197,6 +269,14 @@ with tab_chat:
 
     # ------------------------------------------------------------- new turn ---
     if prompt:
+        # For pdf_insight, fold the sidebar's mode choice into the message as a
+        # `mode:` directive (the coordinator parses it); display stays clean.
+        send_text = prompt
+        if app == "pdf_insight" and pdf_mode_label:
+            mode = PDF_MODES[pdf_mode_label]
+            if mode != pdf_config.AUTO:
+                send_text = f"mode: {mode} {prompt}"
+
         st.session_state.messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"):
             st.markdown(prompt)
@@ -212,39 +292,47 @@ with tab_chat:
                 runner,
                 user_id=USER_ID,
                 session_id=session_id,
-                message=prompt,
+                message=send_text,
                 simulate_stream=(chosen == "mock"),
                 debug_sink=debug_snaps,
             )
-            for ev in _drain(events):
-                if ev.kind == "thinking_delta":
-                    steps.append({"kind": "thinking", "text": ev.text})
-                    status.markdown(ev.text)
-                elif ev.kind == "tool_call":
-                    status.update(label=f"{_pretty_tool(ev.tool_name, ev.tool_args)}…")
-                    steps.append({
-                        "kind": "tool_call",
-                        "tool_name": ev.tool_name, "tool_args": ev.tool_args,
-                    })
-                    status.markdown(f"🔧 {_pretty_tool(ev.tool_name, ev.tool_args)}")
-                    if ev.tool_args:
-                        status.json(ev.tool_args)
-                elif ev.kind == "tool_result":
-                    steps.append({
-                        "kind": "tool_result",
-                        "tool_name": ev.tool_name, "tool_result": ev.tool_result,
-                    })
-                    status.markdown(f"↳ **{ev.tool_name}** returned")
-                    status.json(ev.tool_result)
-                elif ev.kind == "text_delta":
-                    status.update(label="Responding…")
-                    answer += ev.text
-                    answer_box.markdown(answer + " ▌")
-                elif ev.kind == "error":
-                    status.update(label="Error", state="error")
-                    st.error(ev.text)
-                elif ev.kind == "final":
-                    usage = ev.usage
+            # Consume the WHOLE stream inside ONE run_until_complete. Stepping the
+            # async generator with a separate run_until_complete per item (the old
+            # _drain) makes ADK's OpenTelemetry spans attach in one context and
+            # detach in another -> "Token was created in a different Context". We
+            # still render live: this runs on the main thread, so widget updates
+            # between `await`s show up as they happen.
+            acc = {"answer": "", "usage": None}
+
+            async def _consume(events=events, acc=acc):
+                async for ev in events:
+                    if ev.kind == "thinking_delta":
+                        steps.append({"kind": "thinking", "text": ev.text})
+                        status.markdown(ev.text)
+                    elif ev.kind == "tool_call":
+                        status.update(label=f"{_pretty_tool(ev.tool_name, ev.tool_args)}…")
+                        steps.append({"kind": "tool_call",
+                                      "tool_name": ev.tool_name, "tool_args": ev.tool_args})
+                        status.markdown(f"🔧 {_pretty_tool(ev.tool_name, ev.tool_args)}")
+                        if ev.tool_args:
+                            status.json(ev.tool_args)
+                    elif ev.kind == "tool_result":
+                        steps.append({"kind": "tool_result",
+                                      "tool_name": ev.tool_name, "tool_result": ev.tool_result})
+                        status.markdown(f"↳ **{ev.tool_name}** returned")
+                        status.json(ev.tool_result)
+                    elif ev.kind == "text_delta":
+                        status.update(label="Responding…")
+                        acc["answer"] += ev.text
+                        answer_box.markdown(acc["answer"] + " ▌")
+                    elif ev.kind == "error":
+                        status.update(label="Error", state="error")
+                        st.error(ev.text)
+                    elif ev.kind == "final":
+                        acc["usage"] = ev.usage
+
+            _loop().run_until_complete(_consume())
+            answer, usage = acc["answer"], acc["usage"]
 
             latency = time.perf_counter() - t_start
             status.update(

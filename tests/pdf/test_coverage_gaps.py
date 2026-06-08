@@ -323,6 +323,20 @@ def test_corpus_agent_appends_nonempty_dialect_hint():
     assert "list_corpus_schema FIRST" in agent.instruction  # shared guidance still there
 
 
+def test_text2sql_agent_threads_sqlite_dialect_hint():
+    """text2sql.py — SQLiteStore.dialect_hint must reach the Text2SQL prompt.
+
+    SQLite cells are TEXT with thousands-commas, so without this guidance a live
+    model SUMs them wrong. (Offline tests don't catch it because MockPdfLlm
+    hardcodes the REPLACE/CAST itself.) Assert the hint is in the inner agent's
+    instruction — the same dialect_hint contract corpus mode already honors.
+    """
+    from apps.pdf_insight.stores.sqlite_store import SQLiteStore
+
+    mode_agent = text2sql.build()[config.SQL_FROM_TEXT]  # SqlModeAgent
+    assert SQLiteStore.dialect_hint in mode_agent.text2sql.instruction
+
+
 # ===========================================================================
 # modes/text2sql.py — the re-ingest-skip branch
 # ===========================================================================

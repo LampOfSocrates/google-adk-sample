@@ -21,11 +21,11 @@ See `.env.example` for backend selection (`mock` / `gemini` / `openai` / `deepse
 | Feature | State | Notes |
 |---|---|---|
 | **Travel Planner** (`apps/travel_planner`) | ✅ Done | Coordinator → weather sub-agent + web-search agent-tool. `google_search` on gemini; offline `web_search` stand-in elsewhere. |
-| **PDF Insight** (`apps/pdf_insight`) | 🟡 3 of 4 modes | `LLM_GETS_ALL_TABLES_AS_TEXT`, `LLM_MAKES_SQL_FROM_CHAT`, `LLM_GETS_SOME_TABLES_AS_TEXT` done. `LLM_GETS_PDF_BYTES` (gemini native upload) still a guarded placeholder. |
+| **PDF Insight** (`apps/pdf_insight`) | 🟢 4 modes + upload | `ALL_/SOME_TABLES_AS_TEXT`, `LLM_MAKES_SQL_FROM_CHAT` (per-PDF SQLite), `LLM_QUERIES_CORPUS` (whole-corpus DuckDB) done; `LLM_GETS_PDF_BYTES` a guarded gemini placeholder. **Upload ingests into both backends** (SQLite replace + corpus append) via one `SqlStore` abstraction (SQLite/DuckDB/Postgres-ready). |
 | **Text-to-Diagram** (`apps/text_to_diagram`) | ✅ Done | Stateless: prose → triads → mermaid. The accreting successor is Graph Builder. |
 | **Graph Builder** (`apps/graph_builder`) | ✅ Resolver slice done | Conversational, *accreting* KG. Stage-2 **resolver** (the moat: attach-vs-new with provenance) implemented; eval set + offline scorer + demo/eval scripts in place. **Grounding is faked** (chat-only, soft claims) to isolate resolution. |
 | **Backends** (5) | ✅ Done | `mock`/`gemini`/`openai`/`deepseek`/`bedrock`, all smoke-tested 3/3 (`tests/smoke-results/`). LiteLLM providers use the prompt+parse fallback (`supports_output_schema()`). |
-| **Streamlit product UI** (`streamlit_app.py`) | 🟡 Built, untracked | Chat over travel_planner / graph_builder / text_to_diagram. **pdf_insight not yet wired in.** New files not yet committed. |
+| **Streamlit product UI** (`streamlit_app.py`) | ✅ pdf_insight wired in | Chat over pdf_insight / travel_planner / graph_builder / text_to_diagram. **pdf_insight: sidebar PDF uploader (ingests on upload), per-turn mode picker, and a "what's queryable" panel** (corpus coverage + table registry). |
 | **Cartograph L0** (survey/grounding agent) | 📋 Spec + fixture only | `docs/l0-survey-agent.md` spec; golden fixture `tests/fixtures/fake_system/` ready; vendor script for Online Boutique. **No survey agent/tools/test built yet** — the resolver-first pivot deferred it. |
 
 ---

@@ -40,3 +40,11 @@ class PostgresStore(SqlStore):
         raise NotImplementedError(
             "PostgresStore is a placeholder: implement list_schema via "
             "information_schema when psycopg is added.")
+
+    def ingest_pdf(self, pdf_path: str, report_date: str | None = None,
+                   strategy: str = "lines", title_for=None) -> dict:
+        # Real impl: COPY/INSERT the extracted tables into the same canonical
+        # schema DuckDBStore.ingest_pdf builds (documents + pdf_tables + tNN).
+        raise NotImplementedError(
+            "PostgresStore is a placeholder: implement ingest_pdf when psycopg "
+            "is added (write the canonical documents/pdf_tables/tNN schema).")

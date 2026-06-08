@@ -6,6 +6,19 @@ from google.adk.runners import InMemoryRunner
 from google.genai import types
 
 
+@pytest.fixture(autouse=True)
+def _isolate_storage(tmp_path_factory, monkeypatch):
+    """Redirect both backends' on-disk stores to a temp dir for every pdf test.
+
+    The coordinator now ingests on a new PDF (into SQLite AND the corpus), so
+    without this, coordinator-driven tests would write into the repo's real
+    data/ (data/sqlite/*, data/pdf_corpus.duckdb). Tests that pin an explicit
+    corpus_db/db_path in session state still override these (state > env)."""
+    d = tmp_path_factory.mktemp("pdfstore")
+    monkeypatch.setenv("PDF_SQLITE_DIR", str(d / "sqlite"))
+    monkeypatch.setenv("PDF_CORPUS_DB", str(d / "corpus.duckdb"))
+
+
 @pytest.fixture
 def run_agent():
     async def _run(agent, message: str, state: dict | None = None) -> str:
