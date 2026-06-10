@@ -1,4 +1,5 @@
 import asyncio
+import time
 
 from google.adk.agents import LlmAgent
 from google.adk.runners import Runner
@@ -22,11 +23,18 @@ async def main():
 
     async def say(text):
         msg = types.Content(role="user", parts=[types.Part(text=text)])
+        start = time.perf_counter()
+        usage = None  # the final model round-trip carries the turn's token counts
         async for event in runner.run_async(
             user_id="u1", session_id="s1", new_message=msg
         ):
+            if event.usage_metadata:
+                usage = event.usage_metadata
             if event.is_final_response():
                 print(event.content.parts[0].text)
+        latency = time.perf_counter() - start
+        total = usage.total_token_count if usage else 0
+        print(f"  [⏱ {latency:.2f}s · {total} tokens]")
 
     await say("My name is Sourav.")
     await say("What's my name?")  # answers correctly — same session_id = memory
