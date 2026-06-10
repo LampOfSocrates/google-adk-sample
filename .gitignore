@@ -24,12 +24,14 @@ Thumbs.db
 # Vendored real demo for L0 integration (pulled by scripts/vendor_demo_system.ps1)
 tests/fixtures/online_boutique/
 
-# Weekly generated report corpus (regenerable: scripts/weekly_report.py) + DuckDB
-tests/pdf/samples/*.pdf
-tests/pdf/samples/*.golden.json
+# Weekly generated report corpus (regenerable: scripts/pdf_insight/weekly_report.py) + DuckDB
+tests/pdf_insight/samples/*.pdf
+tests/pdf_insight/samples/*.golden.json
 data/pdf_corpus.duckdb
 
 .coverage
 SENTINEL.sqlite
 *.sqlite
+# ADK DatabaseSessionService sqlite files (examples/durable_adk_chat_service.py)
+*.db
 data/uploads/

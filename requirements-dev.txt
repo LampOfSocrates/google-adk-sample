@@ -2,6 +2,7 @@
 pytest
 pytest-asyncio
 pytest-randomly   # shuffles test order each run — surfaces order/global-state coupling
+aiosqlite         # async SQLite driver for examples/durable_adk_chat_service.py (ADK's DatabaseSessionService)
 reportlab          # scripts/pdf_insight/pdf_creator.py — generates synthetic test PDFs
 streamlit
 streamlit-mermaid
