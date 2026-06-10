@@ -1,7 +1,7 @@
 """Assert the canned live-smoke results are all green.
 
 `tests/smoke-results/<backend>.txt` is the committed evidence from
-`python scripts/smoke.py <backend>` against the real providers. This test makes
+`python scripts/shared/smoke.py <backend>` against the real providers. This test makes
 NO API calls — it just guards that the checked-in artifacts show every agent
 passing for each provider, so a regression (or a failing run committed by
 mistake) trips the offline suite.

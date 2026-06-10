@@ -1,8 +1,8 @@
 """One live smoke test per agent against a chosen LLM backend.
 
-    python scripts/smoke.py deepseek
-    python scripts/smoke.py bedrock
-    python scripts/smoke.py            # defaults to deepseek
+    python scripts/shared/smoke.py deepseek
+    python scripts/shared/smoke.py bedrock
+    python scripts/shared/smoke.py            # defaults to deepseek
 
 Makes real (usually cheap) API calls. Each agent is isolated so one failure
 doesn't block the rest. Writes a per-provider artifact `smoke_<backend>_results.txt`
@@ -24,7 +24,7 @@ os.environ.pop("SSL_CERT_DIR", None)
 BACKEND = (sys.argv[1] if len(sys.argv) > 1 else "deepseek").strip().lower()
 os.environ["LLM_BACKEND"] = BACKEND
 
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, REPO_ROOT)
 from dotenv import load_dotenv  # noqa: E402
 

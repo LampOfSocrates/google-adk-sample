@@ -1,8 +1,8 @@
 # L0 — Survey / Grounding Agent (spec)
 
 > **Status (2026-06-05): SPEC + FIXTURE ONLY — not yet built.** The golden fixture
-> (`tests/fixtures/fake_system/`, with `expected/survey_snapshot.json`) and the Online
-> Boutique vendor script (`scripts/vendor_demo_system.ps1`) are ready, but no survey
+> (`tests/fixtures/reference_system/`, with `expected/survey_snapshot.json`) and the Online
+> Boutique vendor script (`scripts/graph_builder/vendor_demo_system.ps1`) are ready, but no survey
 > agent, scanner tools, or test consuming them exists. Deferred behind the resolver-first
 > pivot — `graph_builder` built L1 (resolution) first with grounding faked. See README
 > DecisionLog (2026-06-05).

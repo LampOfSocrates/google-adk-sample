@@ -5,8 +5,8 @@ how many tables, where, their shape, and a preview — before spending any
 Gemini quota on structuring them.
 
 Usage:
-    python scripts/inspect_pdf.py path/to/file.pdf
-    python scripts/inspect_pdf.py path/to/file.pdf --strategy text   # borderless tables
+    python scripts/pdf_insight/inspect_pdf.py path/to/file.pdf
+    python scripts/pdf_insight/inspect_pdf.py path/to/file.pdf --strategy text   # borderless tables
 """
 import argparse
 

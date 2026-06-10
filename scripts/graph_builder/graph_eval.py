@@ -1,8 +1,8 @@
 """Run the resolver eval set against a chosen backend and print a scorecard.
 
-    LLM_BACKEND=openai   python scripts/graph_eval.py
-    LLM_BACKEND=deepseek python scripts/graph_eval.py
-    LLM_BACKEND=gemini   python scripts/graph_eval.py
+    LLM_BACKEND=openai   python scripts/graph_builder/graph_eval.py
+    LLM_BACKEND=deepseek python scripts/graph_builder/graph_eval.py
+    LLM_BACKEND=gemini   python scripts/graph_builder/graph_eval.py
 
 Each scenario runs in its OWN session (fresh graph), accreting its turns, then the
 final graph is scored for correct merges (no wrong-split) and over-merges (no
@@ -20,7 +20,7 @@ import certifi
 os.environ["SSL_CERT_FILE"] = certifi.where()
 os.environ.pop("SSL_CERT_DIR", None)
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 try:
     sys.stdout.reconfigure(encoding="utf-8")
 except (AttributeError, ValueError):

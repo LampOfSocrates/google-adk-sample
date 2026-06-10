@@ -1,13 +1,13 @@
 """Ingest the weekly PDF report corpus into a local DuckDB (offline batch).
 
-PIPELINE: scripts/weekly_report.py drops dated PDFs into tests/pdf/samples/; this
+PIPELINE: scripts/pdf_insight/weekly_report.py drops dated PDFs into tests/pdf_insight/samples/; this
 CLI parses every table out of them and lands them in one DuckDB so the corpus
 mode can answer questions across the whole corpus — including week-over-week
 trends.
 
-    python scripts/pdf_to_duckdb.py                       # ingest tests/pdf/samples
-    python scripts/pdf_to_duckdb.py --reset               # rebuild from scratch
-    python scripts/pdf_to_duckdb.py --query "SELECT ..."  # ad-hoc check
+    python scripts/pdf_insight/pdf_to_duckdb.py                       # ingest tests/pdf_insight/samples
+    python scripts/pdf_insight/pdf_to_duckdb.py --reset               # rebuild from scratch
+    python scripts/pdf_insight/pdf_to_duckdb.py --query "SELECT ..."  # ad-hoc check
 
 The actual ingestion (the canonical documents/pdf_tables/tNN schema) lives in
 `DuckDBStore.ingest_pdf` — the SAME code path the runtime upload handler uses, so
@@ -22,14 +22,14 @@ import json
 import os
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 import duckdb  # noqa: E402 - only for --query
 
 from apps.pdf_insight import storage  # noqa: E402
 from apps.pdf_insight.stores import DuckDBStore  # noqa: E402
 
-SAMPLES_DIR = os.path.join("tests", "pdf", "samples")
+SAMPLES_DIR = os.path.join("tests", "pdf_insight", "samples")
 # Same default the reader resolves, so build + query agree and both honour
 # PDF_CORPUS_DB / PDF_DATA_DIR.
 DB_PATH = storage.duckdb_dsn()

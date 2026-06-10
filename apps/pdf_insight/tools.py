@@ -8,7 +8,7 @@ never a model-visible parameter.
 """
 from __future__ import annotations
 
-from shared import pdf
+from shared import pdf_extractor as pdf
 from google.adk.tools import ToolContext
 
 from .config import MODES

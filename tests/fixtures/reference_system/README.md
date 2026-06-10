@@ -1,4 +1,4 @@
-# `fake_system` — L0 survey golden fixture
+# `reference_system` — L0 survey golden fixture
 
 A tiny, deliberately **unambiguous** polyglot + k8s system. It is the hand-authored
 answer key for the L0 survey/grounding agent: point the scanner tools at this tree
@@ -7,7 +7,7 @@ and the output must equal `expected/survey_snapshot.json`.
 Design rule: **every row of the L0 detection table (`docs/l0-survey-agent.md` §3) has
 exactly one file that is its evidence.** No row is untested; no signal is duplicated
 across two sources (that messiness is what the *vendored real demo* is for — see
-`scripts/vendor_demo_system.ps1`).
+`scripts/graph_builder/vendor_demo_system.ps1`).
 
 ## The system
 
@@ -47,7 +47,7 @@ libs/common-utils (py)  ── library, NOT a service (negative case)
 ```python
 import json, pathlib
 
-FIX = pathlib.Path(__file__).parent / "fixtures" / "fake_system"
+FIX = pathlib.Path(__file__).parent / "fixtures" / "reference_system"
 expected = json.loads((FIX / "expected" / "survey_snapshot.json").read_text())
 
 snap = run_survey_agent(FIX)          # your L0 entrypoint

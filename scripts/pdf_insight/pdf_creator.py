@@ -46,7 +46,7 @@ height). Builders live in build_tables():
     15 Stress P&L by Scenario           derived from aggregate Greeks (spot/vol/rate)
 
 CLI:
-    python scripts/pdf_creator.py --out tests/fixtures/risk_report.pdf \
+    python scripts/pdf_insight/pdf_creator.py --out tests/fixtures/risk_report.pdf \
         --golden tests/fixtures/risk_report.golden.json --pages 4 --seed 42
 """
 from __future__ import annotations

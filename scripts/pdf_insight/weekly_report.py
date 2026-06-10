@@ -1,23 +1,23 @@
 """Generate a *dated* synthetic risk report into the weekly samples corpus.
 
 Built to run on a schedule (Windows Task Scheduler, every Friday) so that
-tests/pdf/samples/ accumulates one report per week:
+tests/pdf_insight/samples/ accumulates one report per week:
 
     risk_report_2026-06-05.pdf   (+ risk_report_2026-06-05.golden.json)
 
 The RNG seed is DERIVED FROM THE DATE (YYYYMMDD), so each week's report differs
-but any given date is reproducible. scripts/pdf_to_duckdb.py then ingests this
+but any given date is reproducible. scripts/pdf_insight/pdf_to_duckdb.py then ingests this
 corpus into a local DuckDB for the pdf_insight SQL mode.
 
-    python scripts/weekly_report.py                 # this week's Friday
-    python scripts/weekly_report.py --date 2026-06-05
-    python scripts/weekly_report.py --backfill 6    # seed the corpus: last 6 Fridays
+    python scripts/pdf_insight/weekly_report.py                 # this week's Friday
+    python scripts/pdf_insight/weekly_report.py --date 2026-06-05
+    python scripts/pdf_insight/weekly_report.py --backfill 6    # seed the corpus: last 6 Fridays
 
 Register the Friday schedule (PowerShell, run once):
 
     $py = "C:\\Users\\soura\\code\\2026\\google-adk-sample\\.venv\\Scripts\\python.exe"
     $wd = "C:\\Users\\soura\\code\\2026\\google-adk-sample"
-    $action  = New-ScheduledTaskAction -Execute $py -Argument "scripts\\weekly_report.py" -WorkingDirectory $wd
+    $action  = New-ScheduledTaskAction -Execute $py -Argument "scripts\\pdf_insight\\weekly_report.py" -WorkingDirectory $wd
     $trigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Friday -At 6pm
     Register-ScheduledTask -TaskName "ADK weekly risk report" -Action $action -Trigger $trigger
 """
@@ -28,11 +28,11 @@ import datetime as dt
 import os
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from scripts.pdf_creator import create_test_pdf  # noqa: E402
+from scripts.pdf_insight.pdf_creator import create_test_pdf  # noqa: E402
 
-SAMPLES_DIR = os.path.join("tests", "pdf", "samples")
+SAMPLES_DIR = os.path.join("tests", "pdf_insight", "samples")
 
 
 def most_recent_friday(today: dt.date | None = None) -> dt.date:
@@ -52,7 +52,7 @@ def generate_for(date: dt.date, out_dir: str = SAMPLES_DIR) -> str:
     pdf_path = os.path.join(out_dir, f"risk_report_{stamp}.pdf")
     golden_path = os.path.join(out_dir, f"risk_report_{stamp}.golden.json")
     # pdf_creator now renders every table ruled (pdfplumber extracts those exactly,
-    # so the corpus parses cleanly for DuckDB ingestion). See scripts/pdf_creator.py.
+    # so the corpus parses cleanly for DuckDB ingestion). See scripts/pdf_insight/pdf_creator.py.
     create_test_pdf(pdf_path, pages=4, seed=seed_for(date), golden_path=golden_path)
     return pdf_path
 

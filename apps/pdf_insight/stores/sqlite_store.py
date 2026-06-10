@@ -16,7 +16,7 @@ import os
 import re
 import sqlite3
 
-from shared import pdf
+from shared import pdf_extractor as pdf
 from google.adk.tools import ToolContext
 
 from .base import SqlStore

@@ -104,7 +104,7 @@ apps/pdf_insight/
     corpus.py        # build_corpus_agent -> QUERY_CORPUS (whole-corpus DuckDB)
     pdfbytes.py      # PdfBytesAgent -> PDF_BYTES (gemini-only placeholder)
 shared/
-  pdf.py             # pure pdfplumber helpers (reused by scripts/inspect_pdf.py)
+  pdf.py             # pure pdfplumber helpers (reused by scripts/pdf_insight/inspect_pdf.py)
 ```
 
 ### Deterministic tools (offline, unit-testable with no LLM)
@@ -125,7 +125,7 @@ text2sql_agent = Agent(
 ```
 - `ingest_tables_to_sqlite(pdf_path, db_path) -> {status, tables}` — one PDF table
   → one SQLite table (`t1`, `t2`, …). Header→column sanitizer with `col_N`
-  fallback for merged/multi-row/ambiguous headers (see `scripts/inspect_pdf.py`
+  fallback for merged/multi-row/ambiguous headers (see `scripts/pdf_insight/inspect_pdf.py`
   warning). Ingest **once per session**; cache `db_path` in `state`.
 - `run_sql` is the trust boundary: reject anything that isn't a single `SELECT`,
   cap returned rows.

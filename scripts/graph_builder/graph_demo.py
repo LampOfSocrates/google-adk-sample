@@ -6,8 +6,8 @@ Identity Provider — plus a distractor (user-service) that must NOT be merged i
 it. The question the demo answers: does the graph ACCRETE onto one canonical node,
 or fork into many?
 
-    python scripts/graph_demo.py                 # offline mock: shows WRONG-SPLIT
-    LLM_BACKEND=gemini python scripts/graph_demo.py   # real resolver: should MERGE
+    python scripts/graph_builder/graph_demo.py                 # offline mock: shows WRONG-SPLIT
+    LLM_BACKEND=gemini python scripts/graph_builder/graph_demo.py   # real resolver: should MERGE
 
 On mock the resolver can't reason, so every mention becomes a new node — that's the
 failure you'd expect, and the reason the real test needs a real model. On gemini,
@@ -22,11 +22,11 @@ import certifi
 
 # Stray SSL_CERT_FILE on this box points at a missing CA bundle and crashes the
 # google-genai HTTPS client the moment LLM_BACKEND=gemini makes a real call.
-# Force a known-good bundle before any google.* import. See scripts/smoke.py.
+# Force a known-good bundle before any google.* import. See scripts/shared/smoke.py.
 os.environ["SSL_CERT_FILE"] = certifi.where()
 os.environ.pop("SSL_CERT_DIR", None)
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 # Windows consoles default to cp1252, which can't encode the arrows/bullets below.
 try:

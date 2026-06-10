@@ -1,41 +1,219 @@
 # google-adk-sample
 
-A multi-agent ADK sample: a small suite of agent-backed apps under `apps/`, sharing
-one model layer (`shared/`) that runs on five interchangeable backends. The newest
-app, **Graph Builder**, is the first slice of **Cartograph** — a self-building
-knowledge graph of a system (see `docs/cartograph-brief.md`).
+A **holding repo for four independent ADK agents**. Each lives in its own folder
+under `apps/`, is discovered by ADK on its own (`root_agent`), and can be run,
+tested, and operated on its own. They share one thing: a single model layer
+(`shared/`) that runs on five interchangeable backends, so any agent works on
+`mock` (offline) or a real LLM without code changes.
 
-Run the agents locally three ways:
-- `streamlit run streamlit_app.py` — Claude-style product chat UI (thinking blocks,
-  live mermaid render, per-turn debug tab) over the apps.
-- `adk web` — the ADK dev UI + debugger (auto-discovers each `apps/` folder).
-- `python scripts/chat.py` — terminal REPL.
+| # | Agent | Folder | One line |
+|---|---|---|---|
+| 1 | **Travel Planner** | `apps/travel_planner/` | Coordinator that routes to a weather sub-agent + a web-search agent-tool. |
+| 2 | **PDF Insight** | `apps/pdf_insight/` | Multi-mode PDF Q&A: extract tables, ask in natural language, or run SQL over one PDF or a whole corpus. |
+| 3 | **Text-to-Diagram** | `apps/text_to_diagram/` | Stateless pipeline: prose → knowledge-graph triads → mermaid diagram. |
+| 4 | **Graph Builder** | `apps/graph_builder/` | Conversational, *accreting* knowledge graph — the entity resolver (the moat) of **Cartograph** (`docs/cartograph-brief.md`). |
 
-See `.env.example` for backend selection (`mock` / `gemini` / `openai` / `deepseek`
-/ `bedrock`); `mock` is the default — free, offline, no tokens.
+The four agent sections below each cover **purpose · main folders · how to run**.
+Cross-cutting material (backends, the shared layer, the Streamlit UI, testing,
+and the decision log) follows.
 
 ---
 
-## Feature status (2026-06-08)
+## Backends & the three ways to run
 
-| Feature | State | Notes |
-|---|---|---|
-| **Travel Planner** (`apps/travel_planner`) | ✅ Done | Coordinator → weather sub-agent + web-search agent-tool. `google_search` on gemini; offline `web_search` stand-in elsewhere. |
-| **PDF Insight** (`apps/pdf_insight`) | 🟢 4 modes + upload | `ALL_/SOME_TABLES_AS_TEXT`, `LLM_MAKES_SQL_FROM_CHAT` (per-PDF SQLite), `LLM_QUERIES_CORPUS` (whole-corpus DuckDB) done; `LLM_GETS_PDF_BYTES` a guarded gemini placeholder. **Upload ingests into both backends** (SQLite replace + corpus append) via one `SqlStore` abstraction (SQLite/DuckDB/Postgres-ready). |
-| **Text-to-Diagram** (`apps/text_to_diagram`) | ✅ Done | Stateless: prose → triads → mermaid. The accreting successor is Graph Builder. |
-| **Graph Builder** (`apps/graph_builder`) | ✅ Resolver slice done | Conversational, *accreting* KG. Stage-2 **resolver** (the moat: attach-vs-new with provenance) implemented; eval set + offline scorer + demo/eval scripts in place. **Grounding is faked** (chat-only, soft claims) to isolate resolution. |
-| **Backends** (5) | ✅ Done | `mock`/`gemini`/`openai`/`deepseek`/`bedrock`, all smoke-tested 3/3 (`tests/smoke-results/`). LiteLLM providers use the prompt+parse fallback (`supports_output_schema()`). |
-| **Streamlit product UI** (`streamlit_app.py`) | ✅ pdf_insight wired in | Chat over pdf_insight / travel_planner / graph_builder / text_to_diagram. **pdf_insight: sidebar PDF uploader (ingests on upload), per-turn mode picker, a top-level Query (whole-corpus) toggle, and a "what's queryable" panel** (corpus coverage + table registry). Auto mode is corpus-aware (single-PDF vs cross-report routing). |
-| **Cartograph L0** (survey/grounding agent) | 📋 Spec + fixture only | `docs/l0-survey-agent.md` spec; golden fixture `tests/fixtures/fake_system/` ready; vendor script for Online Boutique. **No survey agent/tools/test built yet** — the resolver-first pivot deferred it. |
+Every agent binds its model from `shared/model.py`, selected by `LLM_BACKEND`
+(see `.env.example`): `mock` / `gemini` / `openai` / `deepseek` / `bedrock`.
+`mock` is the default — free, offline, no tokens. openai/deepseek/bedrock route
+through ADK's LiteLlm wrapper (`pip install "google-adk[extensions]"`).
+
+Any agent can be driven three ways:
+
+- **`adk web`** — the ADK dev UI + debugger; auto-discovers every folder under
+  `apps/`. Pick an agent from the dropdown. (`./local_run.sh` wraps this and sets
+  `PYTHONPATH` so the agents' `shared.*` imports resolve.)
+- **`streamlit run apps/pages/streamlit_app.py`** — the Claude-style product chat
+  UI (thinking blocks, live mermaid render, per-turn debug tab) over all four
+  agents. (`./local_run.sh ui` wraps this.)
+- **`python scripts/travel_planner/chat.py`** — a terminal REPL (hardwired to Travel Planner).
+
+All Streamlit UI code lives in `apps/pages/` (`streamlit_app.py` + `ui_debug.py`);
+all ADK event streaming funnels through `shared/ui_stream.py`.
+
+---
+
+## 1. Travel Planner — `apps/travel_planner/`  ✅ Done
+
+**Purpose.** A textbook ADK coordinator that owns no domain logic and routes each
+request to the right specialist. It's the reference for the two ways one agent can
+reach another: **transfer** (sub-agent) vs **call** (AgentTool).
+
+- A **weather sub-agent** (plain function tools `get_weather`, `set_preferred_units`)
+  — the coordinator *transfers* control to it.
+- A **web-search agent-tool** — the coordinator *calls* it and keeps control.
+  `google_search` is Gemini-only, so every non-Gemini backend swaps in the offline
+  `web_search` stand-in.
+
+**Main folders / files.**
+- `agent.py` — the whole topology: `weather_agent`, `search_agent`, and the
+  `root_agent` coordinator. (This agent is small enough to be a single file.)
+- `eval_set_1.evalset.json` — an `adk eval` set.
+- Tests: `tests/travel_planner/` — `integration/` (`test_phase2` routing) and
+  `e2e/` (`test_phase1` weather, `test_phase3` web search; both live).
+
+**How to run.**
+```bash
+python scripts/travel_planner/chat.py             # terminal REPL (this agent)
+./local_run.sh                                    # adk web → pick "travel_planner"
+pytest -m integration tests/travel_planner        # offline (mock)
+pytest -m e2e        tests/travel_planner         # live (needs a key)
+```
+
+---
+
+## 2. PDF Insight — `apps/pdf_insight/`  🟢 4 modes + upload
+
+**Purpose.** Multi-mode PDF Q&A. One `PdfInsightAgent` (a custom `BaseAgent`
+router) sends a question to one of five strategies; deterministic work (PDF parse,
+SQL ingest/exec, mode-when-pinned) stays in code/tools, never in an LlmAgent — only
+`auto`-routing and SQL generation call the model. Uploading a PDF makes it the
+active document and **appends** it to a growing corpus. Full design:
+`docs/plans/pdf_insight.md`; scope note: `apps/pdf_insight/CLAUDE.md`.
+
+Modes (constants in `config.py`): `LLM_GETS_ALL_TABLES_AS_TEXT`,
+`LLM_GETS_SOME_TABLES_AS_TEXT`, `LLM_MAKES_SQL_FROM_CHAT` (per-PDF SQLite),
+`LLM_QUERIES_CORPUS` (whole-corpus DuckDB), `LLM_GETS_PDF_BYTES` (gemini-only
+placeholder), and `auto` (the LLM router decides; corpus-aware — single-doc vs
+cross-report).
+
+**Main folders / files.**
+- `agent.py` assembles `root_agent`; `coordinator.py` is the router (`PdfInsightAgent`).
+- `modes/` — one module per strategy: `pdfpart.py`, `text2sql.py`, `pdfbytes.py`,
+  `corpus.py`, merged by `modes.build_dispatch()`.
+- `stores/` — SQL backends behind one `SqlStore` abstraction: `base.py` (the
+  read-only `SELECT` guard), `sqlite_store.py`, `duckdb_store.py`, `postgres_store.py`.
+- `ingest.py` (upload handler), `storage.py` (where each backend reads/writes),
+  `config.py`, `tools.py`.
+- Shared deps: `shared/pdf_extractor.py` (pdfplumber helpers), `shared/model.py`.
+- Tests: `tests/pdf_insight/` — `unit/`, `integration/`, `e2e/` (live); the
+  domain-aware offline mock `mock_pdf_llm.py` and the `conftest.py`/`samples/` live here too.
+
+**How to run.**
+```bash
+./local_run.sh ui                          # Streamlit: PDF uploader + mode picker + "what's queryable"
+./local_run.sh                             # adk web → pick "pdf_insight"
+pytest -m unit        tests/pdf_insight     # fast pure-logic tests
+pytest -m integration tests/pdf_insight     # agent/SQL/corpus under mock
+pytest -m e2e         tests/pdf_insight     # live modes (needs a key)
+```
+
+**Generate test PDFs & build the corpus.** Synthetic, multi-table risk reports
+(Greeks across 4 regions, 16 tables/4 pages) — seeded → deterministic. `tests/pdf_insight/samples/*`
+and `data/pdf_corpus.duckdb` are gitignored (regenerable).
+```bash
+# canonical fixture (committed) + golden answers, seed 42
+python scripts/pdf_insight/pdf_creator.py --out tests/fixtures/risk_report.pdf \
+    --golden tests/fixtures/risk_report.golden.json --pages 4 --tables 16 --seed 42
+
+# dated weekly report(s) into tests/pdf_insight/samples/ (seed derived from the date)
+python scripts/pdf_insight/weekly_report.py                 # this week's Friday
+python scripts/pdf_insight/weekly_report.py --backfill 6    # seed the corpus: last 6 Fridays
+
+# scan the samples, extract every table → data/pdf_corpus.duckdb (keyed by report_date)
+python scripts/pdf_insight/pdf_to_duckdb.py --reset
+python scripts/pdf_insight/pdf_to_duckdb.py --query "SELECT table_index, title FROM pdf_tables"
+```
+On Windows PowerShell, invoke via the venv, e.g. `.venv\Scripts\python.exe scripts\pdf_insight\pdf_to_duckdb.py --reset`.
+
+---
+
+## 3. Text-to-Diagram — `apps/text_to_diagram/`  ✅ Done
+
+**Purpose.** A stateless two-stage `SequentialAgent` that turns free text into a
+mermaid knowledge-graph diagram, and deliberately contrasts the two kinds of ADK
+agent:
+
+- **Stage 1 — `triad_extractor`** (LlmAgent): extracts `(subject, predicate, object)`
+  triads. Uses `output_schema` controlled generation on native backends; falls back
+  to prompt-for-JSON + a `TriadParseAgent` validation stage on LiteLLM providers.
+- **Stage 2 — `MermaidAgent`** (custom BaseAgent): renders triads to mermaid as pure
+  string templating — zero tokens. The pattern for any mechanical step.
+
+The accreting successor to this agent is Graph Builder (§4).
+
+**Main folders / files.**
+- `agent.py` — the pipeline (extractor, optional parser, mermaid builder, `root_agent`).
+- `render.py` — the deterministic mermaid renderer.
+- Tests: `tests/text_to_diagram/` — `unit/test_phase1_render.py`, `integration/test_phase2_pipeline.py`.
+
+**How to run.**
+```bash
+./local_run.sh ui                            # Streamlit → pick "text_to_diagram" (mermaid renders live)
+./local_run.sh                               # adk web → pick "text_to_diagram"
+pytest -m unit        tests/text_to_diagram  # the pure render test
+pytest -m integration tests/text_to_diagram  # the full pipeline under mock
+```
+
+---
+
+## 4. Graph Builder — `apps/graph_builder/`  ✅ Resolver slice done
+
+**Purpose.** Text-to-Diagram grown up. Where §3 is stateless (extract, render,
+forget), Graph Builder **accretes**: a persistent graph lives in
+`session.state["graph"]` and every turn folds new text into it. The hard part — the
+moat — is **stage 2, the resolver**: deciding whether a freshly-named entity is an
+*existing* node under a different surface name (`auth-service` = `AuthN` = `Identity
+Provider`) or a genuinely new one, with confidence + reason. This is the first code
+slice of **Cartograph** (`docs/cartograph-brief.md`); grounding is deliberately
+**faked** (chat-only, soft provenance-tagged claims) to isolate resolution.
+
+Three stages: `mention_extractor` (LlmAgent) → `entity_resolver` (LlmAgent, the
+moat) → `grapher` (deterministic BaseAgent that applies resolutions, accretes
+claims with provenance, and renders the graph + a resolution log).
+
+> On `mock` the resolver can't reason → it returns all-new (wrong-split), which is
+> exactly the failure a real `LLM_BACKEND=gemini` run must fix.
+
+**Main folders / files.**
+- `agent.py` — the three stages + `root_agent`.
+- `render.py` — graph → mermaid renderer.
+- `evals.py` — the offline scorer (correct merges vs over-merges).
+- Tests: `tests/graph_builder/` — `unit/test_graph_evals.py`, `integration/test_graph_builder.py`.
+
+**How to run.**
+```bash
+python scripts/graph_builder/graph_demo.py                     # adversarial demo (mock → WRONG-SPLIT)
+LLM_BACKEND=gemini python scripts/graph_builder/graph_demo.py  # real resolver → should MERGE
+LLM_BACKEND=gemini python scripts/graph_builder/graph_eval.py  # resolver scorecard over the eval set
+./local_run.sh ui                              # Streamlit → pick "graph_builder"
+pytest -m unit        tests/graph_builder      # the offline scorer test
+pytest -m integration tests/graph_builder      # the resolver pipeline under mock
+```
 
 ---
 
 ## Testing
 
+Tests are organized on **two axes** — by usecase (folder) and by kind (marker):
+
+```
+tests/<usecase>/<unit|integration|e2e>/…       # e.g. tests/pdf_insight/integration/
+```
+
+- **unit** — pure logic, no agent runner. **integration** — agent + tools/stores
+  via `InMemoryRunner` on the **mock** backend (offline). **e2e** — hits a **real**
+  LLM (equivalent to the `live` marker).
+- Markers are **auto-applied from the folder** (a `pytest_collection_modifyitems`
+  hook in the root `conftest.py`), and registered in `pytest.ini`. `e2e ⇔ live`, so
+  `pytest -m live` and `pytest -m e2e` select the same tests.
+
+Select by **either axis, or both**:
+
 ```bash
-pytest -m "not live"        # fast, offline — runs on MockLlm, no API/quota (default for CI)
-pytest                      # everything (live tests hit a real LLM)
-pytest -m live              # only the live tests, on Gemini (default backend)
+pytest                                   # everything (e2e/live tests hit a real LLM)
+pytest -m "not e2e"                      # fast, offline — MockLlm, no API/quota (CI default)
+pytest -m unit                           # all unit tests, every usecase
+pytest tests/pdf_insight                 # one usecase, all kinds
+pytest -m integration tests/pdf_insight  # one usecase, one kind  ← combine the axes
 ```
 
 **Live tests against a real LLM.** Pick the backend with `--backend` — no env-var
@@ -53,47 +231,12 @@ On Windows PowerShell, invoke pytest via the venv:
 How it works: the agent binds its model **at import**, so `conftest.py` freezes the
 `--backend` choice (in `LIVE_BACKEND`) before collection, and each live test module
 re-applies it just before importing its agent. That's why a live run is immune to the
-offline modules that force `LLM_BACKEND=mock` at import. openai/deepseek/bedrock route
-through ADK's LiteLlm wrapper — `pip install "google-adk[extensions]"`.
+offline modules that force `LLM_BACKEND=mock` at import. All five backends are
+smoke-tested 3/3 (`tests/shared/smoke-results/`).
 
-> Note: `test_phase3` (web search) asserts on a `google_search` result, which only runs
-> on Gemini; other backends get the offline `web_search` stand-in. Use `test_phase1`/
-> `test_phase2` as the clean cross-backend smoke tests.
-
----
-
-## PDF test data & corpus
-
-Synthetic, multi-table PDFs for testing `pdf_insight` — a multi-region derivatives
-desk risk report (Greeks: delta/gamma/vega/theta/rho), 16 aggregation tables across
-4 pages. Built with reportlab; parsed back with pdfplumber. Seeded → deterministic.
-
-**Generate the PDFs.** One canonical fixture, or a dated weekly corpus:
-
-```bash
-# canonical fixture (committed) + golden answers, all 16 tables, seed 42
-python scripts/pdf_creator.py --out tests/fixtures/risk_report.pdf \
-    --golden tests/fixtures/risk_report.golden.json --pages 4 --tables 16 --seed 42
-
-# dated weekly report(s) into tests/pdf/samples/ (seed derived from the date)
-python scripts/weekly_report.py                 # this week's Friday
-python scripts/weekly_report.py --backfill 6    # seed the corpus: last 6 Fridays
-```
-
-**Parse them into tables (→ DuckDB).** Scan the corpus, extract every table, and land
-it in `data/pdf_corpus.duckdb` (each logical table accumulates across weeks, keyed by
-`report_date`):
-
-```bash
-python scripts/pdf_to_duckdb.py --reset                       # (re)build the DB
-python scripts/pdf_to_duckdb.py --query "SELECT table_index, title FROM pdf_tables"
-python scripts/pdf_to_duckdb.py --query \
-    "SELECT report_date, vega_k FROM t00 WHERE region='Americas' AND NOT is_total ORDER BY report_date"
-```
-
-`tests/pdf/samples/*` and `data/pdf_corpus.duckdb` are gitignored (regenerable) — run
-the two scripts above whenever you want more data. On Windows PowerShell, invoke via
-the venv, e.g. `.venv\Scripts\python.exe scripts\pdf_to_duckdb.py --reset`.
+> Note: Travel Planner's `test_phase3` (web search) asserts on a `google_search`
+> result, which only runs on Gemini; other backends get the offline `web_search`
+> stand-in. Use `test_phase1`/`test_phase2` as the clean cross-backend smoke tests.
 
 ---
 
@@ -125,22 +268,22 @@ faked** (every claim is soft, provenance-tagged, no verified anchor).
 
 **Why.** L0 is objective but mechanical; the resolver is the hard, differentiating part
 (wrong-split vs over-merge). Faking grounding isolates resolution so we can measure it now
-(`apps/graph_builder/evals.py` scorer; `scripts/graph_eval.py` scorecard) without first
+(`apps/graph_builder/evals.py` scorer; `scripts/graph_builder/graph_eval.py` scorecard) without first
 building the whole scanner crew. On `mock` the resolver can't reason → all-new (wrong-split)
 → which is exactly the failure the real `gemini` run must fix.
 
 **Cost / what's still owed.** L0 stays unbuilt: the golden fixture
-(`tests/fixtures/fake_system/`) and the `l0-survey-agent.md` spec are ready, but no survey
+(`tests/fixtures/reference_system/`) and the `l0-survey-agent.md` spec are ready, but no survey
 agent/tools consume them yet. Until L0 lands, the graph has no clickable ground truth — it's
 a resolution demo, not the full product.
 
 ### 2026-06-05 — Streamlit product UI is built (chat pane)
 
 **Decision realized.** The "Streamlit for now" decision below is now **implemented**:
-`streamlit_app.py` is a Claude-style chat over the ADK apps — collapsible Thinking block
+`apps/pages/streamlit_app.py` is a Claude-style chat over the ADK apps — collapsible Thinking block
 (tool calls + reasoning), token streaming, live mermaid render, and a per-turn Debug tab.
 All ADK contact funnels through `shared/ui_stream.py` (raw events → flat `UIEvent`s);
-`shared/debug.py` backs the debug tab.
+`apps/pages/ui_debug.py` backs the debug tab.
 
 **Owed.** Files are not yet committed, and **pdf_insight is not wired into the `APPS` map** —
 it needs its own pane (PDF viewer + mode banner), not just the generic chat surface.

@@ -6,7 +6,7 @@ table index -> title/columns and a `documents` table records report coverage.
 
 Queries open the DB `read_only`; `ingest_pdf` opens it read-write to APPEND one
 report (idempotent per report_date). The same ingestion runs at runtime (upload)
-and from the offline CLI (scripts/pdf_to_duckdb.py), which now just calls this.
+and from the offline CLI (scripts/pdf_insight/pdf_to_duckdb.py), which now just calls this.
 
 This module is just the `DuckDBStore` engine; the backend-neutral corpus tools
 live in `corpus_tools.py` and pick this store (or Postgres) by config.
@@ -20,7 +20,7 @@ import re
 
 import duckdb
 
-from shared import pdf
+from shared import pdf_extractor as pdf
 
 from .base import SqlStore, jsonable
 
@@ -150,7 +150,7 @@ class DuckDBStore(SqlStore):
 
     def available(self) -> str | None:
         if not os.path.exists(self.db_path):
-            return f"No corpus DB at {self.db_path}. Run scripts/pdf_to_duckdb.py first."
+            return f"No corpus DB at {self.db_path}. Run scripts/pdf_insight/pdf_to_duckdb.py first."
         return None
 
     def _connect_readonly(self):

@@ -24,7 +24,7 @@ PDF_BYTES = "LLM_GETS_PDF_BYTES"
 SQL_FROM_TEXT = "LLM_MAKES_SQL_FROM_CHAT"
 SOME_TABLES_AS_TEXT = "LLM_GETS_SOME_TABLES_AS_TEXT"
 # Whole-corpus query mode: read-only DuckDB across every ingested report (not a
-# single PDF). Backed by data/pdf_corpus.duckdb (scripts/pdf_to_duckdb.py) and the
+# single PDF). Backed by data/pdf_corpus.duckdb (scripts/pdf_insight/pdf_to_duckdb.py) and the
 # the DuckDB store, so questions can span weeks. Needs no per-request pdf_path.
 QUERY_CORPUS = "LLM_QUERIES_CORPUS"
 AUTO = "auto"

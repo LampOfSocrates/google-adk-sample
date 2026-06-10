@@ -40,7 +40,7 @@ if [[ $# -eq 0 ]]; then
   exec adk web apps
 elif [[ "$1" == "ui" ]]; then
   shift
-  exec streamlit run streamlit_app.py "$@"
+  exec streamlit run apps/pages/streamlit_app.py "$@"
 else
   exec adk "$@"
 fi

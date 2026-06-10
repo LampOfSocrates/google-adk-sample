@@ -7,7 +7,7 @@ from apps.pdf_insight.modes._common import (
     _parse_table_indices,
     _resolve_pdf_path,
 )
-from shared import pdf
+from shared import pdf_extractor as pdf
 
 FIXTURE = "tests/fixtures/risk_report.pdf"
 

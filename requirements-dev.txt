@@ -1,6 +1,6 @@
 -r requirements.txt
 pytest
 pytest-asyncio
-reportlab          # scripts/pdf_creator.py — generates synthetic test PDFs
+reportlab          # scripts/pdf_insight/pdf_creator.py — generates synthetic test PDFs
 streamlit
 streamlit-mermaid

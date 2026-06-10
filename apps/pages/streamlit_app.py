@@ -1,6 +1,6 @@
 """Claude-style chat UI over the ADK agents in this repo.
 
-    streamlit run streamlit_app.py
+    streamlit run apps/pages/streamlit_app.py
 
 Pick an app in the sidebar, then chat. Tool calls and reasoning show up in a
 collapsible "Thinking" block per turn (like Claude); the answer streams in token
@@ -19,6 +19,14 @@ import time
 
 import certifi
 
+# `streamlit run` puts THIS file's dir (apps/pages) on sys.path, not the repo
+# root, so the absolute `apps.*`/`shared.*` imports below would miss. Put the repo
+# root (two levels up) first. (local_run.sh also exports PYTHONPATH=root; this
+# makes a bare `streamlit run apps/pages/streamlit_app.py` work too.)
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
+
 # Stray SSL_CERT_FILE on this box breaks the HTTPS clients; force certifi.
 os.environ["SSL_CERT_FILE"] = certifi.where()
 os.environ.pop("SSL_CERT_DIR", None)
@@ -32,7 +40,7 @@ import streamlit as st  # noqa: E402
 from streamlit_mermaid import st_mermaid  # noqa: E402
 from google.adk.runners import InMemoryRunner  # noqa: E402
 
-from shared.debug import fetch_session_info, render_debug_tab  # noqa: E402
+from apps.pages.ui_debug import fetch_session_info, render_debug_tab  # noqa: E402
 from shared.model import backend  # noqa: E402
 from shared.ui_stream import stream_ui_events  # noqa: E402
 

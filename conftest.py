@@ -51,6 +51,23 @@ def pytest_configure(config):
     os.environ["LIVE_BACKEND"] = chosen
 
 
+def pytest_collection_modifyitems(config, items):
+    """Derive the kind marker from the folder a test lives in, so `tests/<usecase>/
+    <unit|integration|e2e>/…` is the single source of truth for both axes (usecase
+    by path, kind by marker). `e2e` and the pre-existing `live` marker are kept in
+    sync both ways: anything under e2e/ is also `live` (so it picks the live backend
+    via the _backend_env fixture), and any `live`-marked test is also `e2e`."""
+    for item in items:
+        parts = set(str(item.path).replace("\\", "/").split("/"))
+        for kind in ("unit", "integration", "e2e"):
+            if kind in parts:
+                item.add_marker(getattr(pytest.mark, kind))
+        if "e2e" in parts:
+            item.add_marker(pytest.mark.live)
+        elif item.get_closest_marker("live"):
+            item.add_marker(pytest.mark.e2e)
+
+
 async def _ask(runner, session_id, text, retries=4):
     """Send one user message and return the agent's final text reply.
 

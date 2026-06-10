@@ -11,7 +11,7 @@ hand-written and deliberately conservative — e.g. "Identity Provider team" is 
 TEAM, not the auth service, so it is NOT in the auth must_merge cluster (both
 deepseek and gpt-4o-mini agree, which is why it's encoded that way).
 
-Pure data + scorer here (no ADK), so it's unit-testable; scripts/graph_eval.py
+Pure data + scorer here (no ADK), so it's unit-testable; scripts/graph_builder/graph_eval.py
 runs the pipeline and feeds the resulting graph in.
 """
 from __future__ import annotations

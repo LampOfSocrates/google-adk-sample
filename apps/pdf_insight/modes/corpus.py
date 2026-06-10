@@ -1,7 +1,7 @@
 """Corpus query mode: LLM_QUERIES_CORPUS.
 
 Unlike the SQL mode (which ingests ONE uploaded PDF into a per-session SQLite),
-this mode reads the PERSISTENT, multi-PDF corpus that scripts/pdf_to_duckdb.py
+this mode reads the PERSISTENT, multi-PDF corpus that scripts/pdf_insight/pdf_to_duckdb.py
 builds from the weekly report corpus — so a question can span every ingested
 report (e.g. week-over-week trends), not just one file.
 

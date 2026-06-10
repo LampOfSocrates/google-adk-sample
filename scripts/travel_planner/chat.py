@@ -1,6 +1,6 @@
 """Tiny REPL to talk to the root agent from the terminal.
 
-    python scripts/chat.py
+    python scripts/travel_planner/chat.py
 
 Uses whatever LLM_BACKEND is set in .env (mock by default, so it's free and
 offline). Keeps one session so state — like your unit preference — persists
@@ -17,7 +17,7 @@ os.environ["SSL_CERT_FILE"] = certifi.where()
 os.environ.pop("SSL_CERT_DIR", None)
 
 # Make `import apps.travel_planner` work when run from the repo root.
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from dotenv import load_dotenv
 
