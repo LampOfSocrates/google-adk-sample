@@ -4,7 +4,7 @@
 # stack choice: 11 services across Go / Python / Node / Java / C#, real per-service
 # Dockerfiles under src/<svc>/, and real k8s manifests under
 # kubernetes-manifests/ + release/kubernetes-manifests.yaml. It exercises the messy
-# multi-source cases the hand-authored reference_system fixture deliberately avoids.
+# multi-source cases the hand-authored sample_repo1 fixture deliberately avoids.
 #
 # This does a shallow sparse checkout of ONLY the files L0 cares about (src + manifests),
 # not the whole repo. Run from the project root:  ./scripts/graph_builder/vendor_demo_system.ps1

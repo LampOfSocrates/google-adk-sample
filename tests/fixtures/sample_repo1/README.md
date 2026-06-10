@@ -1,4 +1,4 @@
-# `reference_system` — L0 survey golden fixture
+# `sample_repo1` — L0 survey golden fixture
 
 A tiny, deliberately **unambiguous** polyglot + k8s system. It is the hand-authored
 answer key for the L0 survey/grounding agent: point the scanner tools at this tree
@@ -47,7 +47,7 @@ libs/common-utils (py)  ── library, NOT a service (negative case)
 ```python
 import json, pathlib
 
-FIX = pathlib.Path(__file__).parent / "fixtures" / "reference_system"
+FIX = pathlib.Path(__file__).parent / "fixtures" / "sample_repo1"
 expected = json.loads((FIX / "expected" / "survey_snapshot.json").read_text())
 
 snap = run_survey_agent(FIX)          # your L0 entrypoint

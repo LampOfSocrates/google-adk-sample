@@ -273,7 +273,7 @@ building the whole scanner crew. On `mock` the resolver can't reason → all-new
 → which is exactly the failure the real `gemini` run must fix.
 
 **Cost / what's still owed.** L0 stays unbuilt: the golden fixture
-(`tests/fixtures/reference_system/`) and the `l0-survey-agent.md` spec are ready, but no survey
+(`tests/fixtures/sample_repo1/`) and the `l0-survey-agent.md` spec are ready, but no survey
 agent/tools consume them yet. Until L0 lands, the graph has no clickable ground truth — it's
 a resolution demo, not the full product.
 

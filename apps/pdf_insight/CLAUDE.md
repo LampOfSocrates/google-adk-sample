@@ -20,7 +20,7 @@ question to one of five strategies. Full design: `docs/plans/pdf_insight.md`.
   `DuckDBStore.ingest_pdf` at runtime AND by the offline batch `scripts/pdf_insight/pdf_to_duckdb.py`
   (same code path); queried `read_only`.
 - **Ignore** the sibling apps (`text_to_diagram`, `travel_planner`), `shared/schemas.py`,
-  and everything under `docs/cartograph*` / `tests/fixtures/reference_system/` — none are
+  and everything under `docs/cartograph*` / `tests/fixtures/sample_repo1/` — none are
   dependencies of this app.
 
 ## Run / test

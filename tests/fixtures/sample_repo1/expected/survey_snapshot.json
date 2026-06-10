@@ -1,5 +1,5 @@
 {
-  "_note": "Golden L0 output for reference_system. Tests should match components/edges on (type, value, confidence_tier) and treat `scanned_at` and the :line suffix of evidence as advisory (normalize before diffing). See ../README.md for the row-by-row mapping.",
+  "_note": "Golden L0 output for sample_repo1. Tests should match components/edges on (type, value, confidence_tier) and treat `scanned_at` and the :line suffix of evidence as advisory (normalize before diffing). See ../README.md for the row-by-row mapping.",
   "scope": [
     "repo:auth-service",
     "repo:checkout",
