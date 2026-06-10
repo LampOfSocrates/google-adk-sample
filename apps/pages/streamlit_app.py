@@ -82,9 +82,12 @@ def _loop() -> asyncio.AbstractEventLoop:
 def _get_runner(app: str, backend_name: str):
     """Build (or reuse) the runner + session for the selected app + backend.
 
-    Agents bind their model at import time (`root_agent = Agent(model=get_model())`),
-    so switching backend means setting LLM_BACKEND *and* reloading the module so the
-    agent (and any backend-gated tools, e.g. google_search) rebuild for the new one.
+    The model binds lazily now (`shared.model.get_model()` returns a proxy that reads
+    LLM_BACKEND per turn), so a backend switch no longer needs a reload just to rebind
+    it. We still purge + re-import the app package on a switch because backend-GATED
+    *structure* is fixed at build/import time — `is_gemini()` picks google_search vs
+    the offline stand-in, `supports_output_schema()` picks controlled-generation vs
+    prompt-parse — so the agent must rebuild to match the new backend.
     """
     if (
         st.session_state.get("app") == app
@@ -97,9 +100,10 @@ def _get_runner(app: str, backend_name: str):
     # Reload the WHOLE app package, not just agent.py. `importlib.reload(agent)`
     # keeps cached coordinator/modes/stores, so edits there (e.g. the router's
     # tool list) are missed -> stale 'Tool X not found. Available: ...'. Purging
-    # the package makes the re-import fully fresh so the agent rebinds the new
-    # model AND the current tools/instructions. (Runs only on app/backend switch
-    # or after 'New conversation', not every rerun.)
+    # the package makes the re-import fully fresh so the agent rebuilds with the
+    # current backend-gated tools/instructions (the model itself rebinds lazily) AND
+    # any code edits. (Runs only on app/backend switch or 'New conversation', not
+    # every rerun.)
     pkg = APPS[app].rsplit(".", 1)[0]  # "apps.pdf_insight.agent" -> "apps.pdf_insight"
     for _name in [m for m in list(sys.modules) if m == pkg or m.startswith(pkg + ".")]:
         del sys.modules[_name]
