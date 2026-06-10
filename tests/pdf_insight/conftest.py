@@ -1,21 +1,17 @@
 """pdf-test fixtures. `run_agent` drives one agent for a single turn and returns
 its final text — used by the MockPdfLlm correctness tests, which build targeted
-agents (model=MockPdfLlm()) rather than the import-bound root_agent."""
+agents (model=MockPdfLlm()) rather than the import-bound root_agent.
+
+Note: tests import `apps.pdf_insight.agent.root_agent` directly at module top.
+The model binds lazily (shared.model.LazyModel resolves LLM_BACKEND per turn), so
+the import no longer freezes the backend and the autouse `_backend_env` fixture in
+the root conftest pinning LLM_BACKEND=mock at run time is sufficient. The old
+purge+reimport helper (tests/pdf_insight/_graph.py) and the pdf_root_agent fixture
+it backed are gone — see integration/test_agent_isolation.py for the regression
+guard proving a single imported root_agent follows the runtime backend."""
 import pytest
 from google.adk.runners import InMemoryRunner
 from google.genai import types
-
-from tests.pdf_insight._graph import rebuild_pdf_agent
-
-
-@pytest.fixture
-def pdf_root_agent(monkeypatch):
-    """The coordinator built fresh under the mock backend, immune to collection
-    order. Use this instead of importing `root_agent` at module top — that binds
-    the graph to whichever backend a sibling module imported first during
-    collection (the live/offline cross-contamination we got burned by). See
-    `tests/pdf_insight/_graph.py`."""
-    return rebuild_pdf_agent("mock", monkeypatch)
 
 
 @pytest.fixture(autouse=True)

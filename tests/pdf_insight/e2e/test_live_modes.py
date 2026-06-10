@@ -14,35 +14,20 @@ The pinned modes (ALL/SOME/SQL) resolve the default fixture PDF themselves, so n
 session state is needed; the corpus mode reads a temp DuckDB via PDF_CORPUS_DB.
 """
 import datetime as dt
-import importlib
 import json
-import os
-import sys
 
 import pytest
 
 from apps.pdf_insight import config
+from apps.pdf_insight.agent import root_agent
 from scripts.pdf_insight.pdf_to_duckdb import ingest_dir
 from scripts.pdf_insight.weekly_report import generate_for
 
 pytestmark = pytest.mark.live
 
-
-@pytest.fixture(scope="module")
-def root_agent():
-    """The coordinator bound to the LIVE backend, built fresh at run time.
-
-    Agents bind their model at import. Tests collect in varying order and a sibling
-    offline module may have already imported the pdf_insight graph under mock — so
-    we purge + reimport here, under the live backend, to guarantee a live-bound
-    graph. Doing this in a fixture (not at module top) keeps offline collection of
-    this deselected module side-effect-free, so it can't bind the shared agent to a
-    live backend during an offline run."""
-    os.environ["LLM_BACKEND"] = os.environ.get("LIVE_BACKEND", "gemini")
-    for _m in [m for m in list(sys.modules)
-               if m == "apps.pdf_insight" or m.startswith("apps.pdf_insight.")]:
-        del sys.modules[_m]
-    return importlib.import_module("apps.pdf_insight.agent").root_agent
+# `root_agent` is imported directly: the model binds lazily (shared.model.LazyModel
+# resolves LLM_BACKEND per turn), and the autouse `_backend_env` fixture pins the
+# live backend for live-marked tests at run time — so no purge+reimport is needed.
 
 GOLD = json.load(open("tests/fixtures/risk_report.golden.json", encoding="utf-8"))["facts"]
 VEGA = GOLD["totals"]["vega"]            # 6384
@@ -56,7 +41,9 @@ def _has_number(answer: str, value: int) -> bool:
 
 
 # ----------------------------------------------------------- tables-as-text ---
-async def test_live_all_tables_mode_total_vega(converse, root_agent):
+async def test_live_all_tables_mode_total_vega(converse):
+    """Live ALL-tables mode: a real model reads every rendered table and returns the
+    golden total vega through the actual coordinator."""
     answers, state = await converse(
         root_agent, [f"mode: {config.ALL_TABLES_AS_TEXT} what is the total vega?"]
     )
@@ -64,7 +51,9 @@ async def test_live_all_tables_mode_total_vega(converse, root_agent):
     assert _has_number(answers[-1], VEGA)
 
 
-async def test_live_some_tables_mode_total_vega(converse, root_agent):
+async def test_live_some_tables_mode_total_vega(converse):
+    """Live SOME-tables mode: pinned to table 0 (the by-region summary that carries
+    the vega total), a real model still returns the golden figure."""
     # Table 0 is the by-region risk summary, which carries the vega total.
     answers, state = await converse(
         root_agent, [f"mode: {config.SOME_TABLES_AS_TEXT} table 0 what is the total vega?"]
@@ -74,7 +63,9 @@ async def test_live_some_tables_mode_total_vega(converse, root_agent):
 
 
 # --------------------------------------------------------------- SQL mode -----
-async def test_live_sql_mode_region_max_vega(converse, root_agent):
+async def test_live_sql_mode_region_max_vega(converse):
+    """Live SQL mode: a real model writes SQL and names the max-vega region. Chosen
+    because it needs only an ordering, not summing comma'd TEXT cells."""
     # Correctness check that doesn't hinge on the model summing comma'd TEXT cells:
     # "which region" only needs an ordering, and the by-region table is small.
     answers, state = await converse(
@@ -96,7 +87,9 @@ def corpus_db(tmp_path_factory):
     return db
 
 
-async def test_live_corpus_mode_vega_by_region(converse, root_agent, corpus_db, monkeypatch):
+async def test_live_corpus_mode_vega_by_region(converse, corpus_db, monkeypatch):
+    """Live corpus mode: a real model queries the multi-week DuckDB corpus and names
+    every region — proving it grouped across all reports, not just one document."""
     # The corpus tools read PDF_CORPUS_DB when state has no corpus_db (converse can't
     # seed state). DuckDB stores numerics as DOUBLE, so summing here is clean.
     monkeypatch.setenv("PDF_CORPUS_DB", corpus_db)
