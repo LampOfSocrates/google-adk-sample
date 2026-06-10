@@ -7,17 +7,10 @@ idempotency, both-backend ingest, the coordinator hook) plus the defensive
 branches the wiring adds. The pdf-conftest autouse fixture points both stores at a
 temp dir, so nothing here touches the repo's data/.
 """
-import os
-
-os.environ["LLM_BACKEND"] = "mock"  # must precede any agent import
-
-import pytest  # noqa: E402
-
-from apps.pdf_insight import config  # noqa: E402
-from apps.pdf_insight.agent import root_agent  # noqa: E402
-from apps.pdf_insight.ingest import ingest_pdf_everywhere  # noqa: E402
-from apps.pdf_insight.stores import DuckDBStore, SQLiteStore  # noqa: E402
-from apps.pdf_insight.stores import duckdb_store  # noqa: E402
+from apps.pdf_insight import config
+from apps.pdf_insight.ingest import ingest_pdf_everywhere
+from apps.pdf_insight.stores import DuckDBStore, SQLiteStore
+from apps.pdf_insight.stores import duckdb_store
 
 FIXTURE = "tests/fixtures/risk_report.pdf"
 
@@ -123,26 +116,26 @@ def test_ingest_everywhere_skips_corpus_when_backend_unimplemented(monkeypatch):
 # ===========================================================================
 # Coordinator hook — ingest on a new PDF, skip on the same, report on failure
 # ===========================================================================
-async def test_coordinator_ingests_on_new_pdf(converse):
+async def test_coordinator_ingests_on_new_pdf(converse, pdf_root_agent):
     """Driving root_agent with a fresh session ingests the active PDF once."""
-    _, state = await converse(root_agent, ["what is in this report?"])
+    _, state = await converse(pdf_root_agent, ["what is in this report?"])
     assert state["ingested_pdf"].endswith("risk_report.pdf")
     assert "db_path" in state  # SQLite ingest ran via the coordinator
 
 
-async def test_coordinator_skips_reingest_on_same_pdf(converse):
+async def test_coordinator_skips_reingest_on_same_pdf(converse, pdf_root_agent):
     """Second turn on the same PDF takes the skip arc (ingested_pdf == path)."""
     answers, state = await converse(
-        root_agent, ["first question?", "second question?"])
+        pdf_root_agent, ["first question?", "second question?"])
     assert state["ingested_pdf"].endswith("risk_report.pdf")
     assert len(answers) == 2  # both turns answered; no crash on the skip path
 
 
-async def test_coordinator_reports_ingest_failure_without_crashing(converse):
+async def test_coordinator_reports_ingest_failure_without_crashing(converse, pdf_root_agent):
     """A bad PDF path makes ingestion fail; the coordinator reports it and the
     turn still completes (here pinned to pdfbytes, which refuses under mock)."""
     answers, state = await converse(
-        root_agent, [f"mode: {config.PDF_BYTES} look at nope_missing.pdf"])
+        pdf_root_agent, [f"mode: {config.PDF_BYTES} look at nope_missing.pdf"])
     assert state["active_pdf_mode"] == config.PDF_BYTES
     assert answers[-1]  # the mode still produced its (refusal) answer
 

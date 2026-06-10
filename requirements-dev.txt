@@ -1,6 +1,7 @@
 -r requirements.txt
 pytest
 pytest-asyncio
+pytest-randomly   # shuffles test order each run — surfaces order/global-state coupling
 reportlab          # scripts/pdf_insight/pdf_creator.py — generates synthetic test PDFs
 streamlit
 streamlit-mermaid

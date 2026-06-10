@@ -3,15 +3,14 @@
 Fires the `except` paths in modes/pdfpart.py and modes/text2sql.py and the extract_tables
 tool's error dict, using a throwaway broken PDF (no committed fixture needed).
 """
-import os
-
 import pytest
 
 from apps.pdf_insight import config
 from apps.pdf_insight.modes import text2sql, pdfpart
 from apps.pdf_insight.tools import extract_tables
 
-os.environ["LLM_BACKEND"] = "mock"  # mode agents bind their model at build()
+# No module-top LLM_BACKEND write: mode agents bind lazily in build(), and the
+# autouse _backend_env fixture pins mock at run time — so there is nothing to leak.
 
 
 class _Ctx:

@@ -6,28 +6,25 @@ Each test names the file:line it covers so the intent stays obvious if the line
 numbers drift. These are almost all error handlers and one-off guards — exactly
 the code you only find out is broken when it's too late, so it's worth pinning.
 
-Backend is forced to mock before the agent imports, matching the sibling suites.
+No module-top LLM_BACKEND write: nothing here binds a model at import (the mode
+agents build lazily), and the autouse _backend_env fixture pins mock at run time.
 """
-import os
+from decimal import Decimal
 
-os.environ["LLM_BACKEND"] = "mock"  # must precede any agent import
+import duckdb
+import pytest
+from google.adk.runners import InMemoryRunner
+from google.genai import types
 
-from decimal import Decimal  # noqa: E402
-
-import duckdb  # noqa: E402
-import pytest  # noqa: E402
-from google.adk.runners import InMemoryRunner  # noqa: E402
-from google.genai import types  # noqa: E402
-
-from apps.pdf_insight import config, modes  # noqa: E402
-from apps.pdf_insight.stores import sqlite_store as sql_tools  # noqa: E402
-from apps.pdf_insight.stores.corpus_tools import (  # noqa: E402
+from apps.pdf_insight import config, modes
+from apps.pdf_insight.stores import sqlite_store as sql_tools
+from apps.pdf_insight.stores.corpus_tools import (
     get_corpus_store,
     list_corpus_schema,
     run_corpus_sql,
 )
-from apps.pdf_insight.stores.duckdb_store import _jsonable  # noqa: E402
-from apps.pdf_insight.modes import _common, corpus, pdfbytes, pdfpart, text2sql  # noqa: E402
+from apps.pdf_insight.stores.duckdb_store import _jsonable
+from apps.pdf_insight.modes import _common, corpus, pdfbytes, pdfpart, text2sql
 
 FIXTURE = "tests/fixtures/risk_report.pdf"
 

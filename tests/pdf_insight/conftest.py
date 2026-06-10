@@ -5,6 +5,18 @@ import pytest
 from google.adk.runners import InMemoryRunner
 from google.genai import types
 
+from tests.pdf_insight._graph import rebuild_pdf_agent
+
+
+@pytest.fixture
+def pdf_root_agent(monkeypatch):
+    """The coordinator built fresh under the mock backend, immune to collection
+    order. Use this instead of importing `root_agent` at module top — that binds
+    the graph to whichever backend a sibling module imported first during
+    collection (the live/offline cross-contamination we got burned by). See
+    `tests/pdf_insight/_graph.py`."""
+    return rebuild_pdf_agent("mock", monkeypatch)
+
 
 @pytest.fixture(autouse=True)
 def _isolate_storage(tmp_path_factory, monkeypatch):
