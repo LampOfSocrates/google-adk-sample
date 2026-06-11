@@ -11,7 +11,9 @@ All ADK contact is funneled through `shared.ui_stream.stream_ui_events`, which
 turns raw events into flat UIEvents. This file only knows how to draw UIEvents.
 """
 import asyncio
+import hashlib
 import importlib
+import json
 import os
 import re
 import sys
@@ -40,7 +42,8 @@ import streamlit as st  # noqa: E402
 from streamlit_mermaid import st_mermaid  # noqa: E402
 from google.adk.runners import InMemoryRunner  # noqa: E402
 
-from apps.pages.ui_debug import fetch_session_info, render_debug_tab  # noqa: E402
+from apps.pages import agent_overrides, conversations  # noqa: E402
+from apps.pages.ui_debug import fetch_session_info, render_debug_tab, snapshot_event  # noqa: E402
 from shared.model import backend  # noqa: E402
 from shared.ui_stream import stream_ui_events  # noqa: E402
 
@@ -66,7 +69,7 @@ PDF_MODES = {
     "some tables → text": pdf_config.SOME_TABLES_AS_TEXT,
     "SQL over THIS pdf (SQLite)": pdf_config.SQL_FROM_TEXT,
     "SQL over the WHOLE corpus (DuckDB)": pdf_config.QUERY_CORPUS,
-    "raw pdf bytes (gemini only)": pdf_config.PDF_BYTES,
+    "raw pdf bytes (native)": pdf_config.PDF_BYTES,
 }
 
 
@@ -108,6 +111,9 @@ def _get_runner(app: str, backend_name: str):
     for _name in [m for m in list(sys.modules) if m == pkg or m.startswith(pkg + ".")]:
         del sys.modules[_name]
     module = importlib.import_module(APPS[app])
+    # Overlay the saved prompt/model edits (data/agent_overrides/<app>.json) onto
+    # the freshly-built agents. Re-applied on every rebuild, so edits persist.
+    agent_overrides.apply(module.root_agent, agent_overrides.load(app))
     runner = InMemoryRunner(agent=module.root_agent, app_name=app)
     session = _loop().run_until_complete(
         runner.session_service.create_session(app_name=app, user_id=USER_ID)
@@ -116,8 +122,14 @@ def _get_runner(app: str, backend_name: str):
     st.session_state.backend = backend_name
     st.session_state.runner = runner
     st.session_state.session_id = session.id
-    st.session_state.messages = []
-    st.session_state.debug_turns = []
+    # A rebuild normally starts a clean chat; an agent-edit rebuild keeps it (the
+    # Agents tab sets _keep_history) so prompt tweaks don't wipe the conversation.
+    if st.session_state.pop("_keep_history", False):
+        st.session_state.setdefault("messages", [])
+        st.session_state.setdefault("debug_turns", [])
+    else:
+        st.session_state.messages = []
+        st.session_state.debug_turns = []
     return runner, session.id
 
 
@@ -310,8 +322,82 @@ def _pdf_overview() -> None:
                             + ", ".join(t["table"] for t in sql["schema"]))
 
 
+# ------------------------------------------------------------- conversations ---
+def _msgs_hash(msgs: list[dict]) -> str:
+    """Content hash of the transcript, so autosave skips unchanged sessions."""
+    return hashlib.md5(json.dumps(msgs, default=str, sort_keys=True).encode()).hexdigest()
+
+
+def _persist(conv_id: str, app: str, backend_name: str, title: str | None,
+             pdf_mode_label: str | None = None) -> str:
+    """Write the current session to its folder and mark it saved."""
+    ss = st.session_state
+    folder = conversations.save(
+        conv_id, app=app, backend=backend_name,
+        messages=ss.get("messages", []), debug_turns=ss.get("debug_turns", []),
+        title=title or conversations.title_from(ss.get("messages", [])),
+        extra={"pdf_path": os.environ.get("PDF_PATH"), "pdf_mode": pdf_mode_label},
+    )
+    ss["_autosave_hash"] = _msgs_hash(ss.get("messages", []))
+    return folder
+
+
+def _new_conversation() -> None:
+    """Reset to a blank session (drops runner so _get_runner rebuilds fresh)."""
+    for k in ("runner", "session_id", "messages", "app", "backend", "debug_turns",
+              "conv_id", "conv_title", "_autosave_hash"):
+        st.session_state.pop(k, None)
+
+
+def _load_conversation(conv_id: str) -> None:
+    """Callback: load a saved conversation. Runs BEFORE the rerun so it may set the
+    app/backend *widget* keys (forbidden in the main script body after the widgets
+    exist). _keep_history makes the runner rebuild keep the loaded transcript."""
+    ss = st.session_state
+    data = conversations.load(conv_id)
+    meta = data["meta"]
+    if meta.get("app") in APPS:
+        ss["app_select"] = meta["app"]
+    if meta.get("backend") in BACKENDS:
+        ss["backend_select"] = meta["backend"]
+    ss["messages"] = data["messages"]
+    ss["debug_turns"] = data["debug_turns"]
+    ss["conv_id"] = meta.get("id", conv_id)
+    ss["conv_title"] = meta.get("title", conv_id)
+    ss["_autosave_hash"] = _msgs_hash(data["messages"])
+    ss["_keep_history"] = True
+    for k in ("runner", "session_id", "app", "backend"):
+        ss.pop(k, None)
+
+
+def _delete_conversation(conv_id: str) -> None:
+    """Callback: delete a saved conversation; if it's the open one, go blank."""
+    conversations.delete(conv_id)
+    ss = st.session_state
+    if ss.get("conv_id") == conv_id:
+        for k in ("conv_id", "conv_title", "_autosave_hash"):
+            ss.pop(k, None)
+    ss.pop("conv_pick", None)  # clear the picker (its option just vanished)
+
+
 # ---------------------------------------------------------------- page setup ---
 st.set_page_config(page_title="ADK Chat", page_icon="🤖", layout="centered")
+
+
+@st.fragment(run_every=conversations.AUTOSAVE_INTERVAL_SECONDS)
+def _autosave_tick() -> None:
+    """Self-rerunning every AUTOSAVE_INTERVAL_SECONDS: persist the session if it
+    changed. Auto-names an unsaved conversation on first write. Renders nothing."""
+    ss = st.session_state
+    msgs = ss.get("messages") or []
+    if not msgs or ss.get("_autosave_hash") == _msgs_hash(msgs):
+        return
+    conv_id = ss.get("conv_id")
+    if not conv_id:
+        conv_id = conversations.new_id(ss.get("app", "chat"), conversations.title_from(msgs))
+        ss["conv_id"] = conv_id
+        ss["conv_title"] = conversations.title_from(msgs)
+    _persist(conv_id, ss.get("app", "chat"), ss.get("backend", "mock"), ss.get("conv_title"))
 
 with st.sidebar:
     st.title("🤖 ADK Chat")
@@ -333,9 +419,35 @@ with st.sidebar:
     if app == "pdf_insight":
         pdf_mode_label = st.selectbox("Query mode", list(PDF_MODES), key="pdf_mode")
 
-    if st.button("🗑️ New conversation", width="stretch"):
-        for k in ("runner", "session_id", "messages", "app", "backend", "debug_turns"):
-            st.session_state.pop(k, None)
+    # --- Conversations: save / new / open / delete -------------------------
+    st.divider()
+    st.subheader("💾 Conversations")
+    cur_title = st.session_state.get("conv_title")
+    st.caption(f"Open: **{cur_title}**" if cur_title else "Open: _unsaved draft_")
+    cs, cn = st.columns(2)
+    if cs.button("💾 Save", width="stretch", type="primary",
+                 disabled=not st.session_state.get("messages")):
+        cid = st.session_state.get("conv_id") or conversations.new_id(
+            app, conversations.title_from(st.session_state.get("messages", [])))
+        title = st.session_state.get("conv_title") or conversations.title_from(
+            st.session_state.get("messages", []))
+        folder = _persist(cid, app, chosen, title, pdf_mode_label)
+        st.session_state["conv_id"] = cid
+        st.session_state["conv_title"] = title
+        st.success(f"Saved → `{folder}`")
+    cn.button("🆕 New", width="stretch", on_click=_new_conversation)
+
+    saved = conversations.list_conversations()
+    if saved:
+        opts = {f"{m.get('title', m['id'])}  ·  {m.get('updated_at', '')[:16]}": m["id"]
+                for m in saved}
+        pick = st.selectbox("Open saved", list(opts), index=None,
+                            placeholder=f"{len(saved)} saved…", key="conv_pick")
+        if pick:
+            cid = opts[pick]
+            bo, bd = st.columns(2)
+            bo.button("📂 Open", width="stretch", on_click=_load_conversation, args=(cid,))
+            bd.button("🗑️ Delete", width="stretch", on_click=_delete_conversation, args=(cid,))
 
     if app == "pdf_insight":
         st.divider()
@@ -353,7 +465,7 @@ st.session_state.setdefault("debug_turns", [])
 # of the viewport; history then scrolls above it like a normal chat app.
 prompt = st.chat_input("Message…")
 
-tab_chat, tab_debug = st.tabs(["💬 Chat", "🔍 Debug"])
+tab_chat, tab_debug, tab_agents = st.tabs(["💬 Chat", "🔍 Debug", "🛠️ Agents"])
 
 with tab_chat:
     if app == "pdf_insight":
@@ -404,6 +516,7 @@ with tab_chat:
                 message=send_text,
                 simulate_stream=(chosen == "mock"),
                 debug_sink=debug_snaps,
+                snapshot_fn=snapshot_event,
             )
             # Consume the WHOLE stream inside ONE run_until_complete. Stepping the
             # async generator with a separate run_until_complete per item (the old
@@ -471,5 +584,18 @@ with tab_chat:
             ),
         })
 
+        # Per-turn save insurance: if this conversation is already named, flush it
+        # to disk now (autosave handles the unnamed case on its 5-min timer).
+        if st.session_state.get("conv_id"):
+            _persist(st.session_state["conv_id"], app, chosen,
+                     st.session_state.get("conv_title"), pdf_mode_label)
+
 with tab_debug:
     render_debug_tab(st.session_state.debug_turns, root_agent=getattr(runner, "agent", None))
+
+with tab_agents:
+    agent_overrides.render_agents_tab(getattr(runner, "agent", None), app, chosen)
+
+# Periodic autosave (every conversations.AUTOSAVE_INTERVAL_SECONDS). Self-reruns on
+# its own timer without a full-page rerun; renders nothing.
+_autosave_tick()

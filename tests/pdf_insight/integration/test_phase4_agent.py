@@ -109,12 +109,16 @@ async def test_sql_mode_reingests_when_pdf_changes(run_agent, monkeypatch):
     assert calls == [fixture]  # re-ingested the new PDF, didn't reuse the stale db
 
 
-async def test_native_bytes_mode_refused_under_mock(converse):
-    """Native PDF_BYTES needs a Gemini backend; under mock the mode refuses cleanly
-    and the reply tells the user it needs gemini, rather than erroring."""
+async def test_native_bytes_mode_runs_on_any_backend(converse):
+    """Native PDF_BYTES now answers on any document-capable backend, not just gemini.
+
+    Under mock the model ignores the attached bytes and returns its offline
+    placeholder, but the point is the mode dispatches and answers cleanly — no
+    'needs the gemini backend' refusal and no crash."""
     answers, state = await converse(
         root_agent,
         [f"mode: {config.PDF_BYTES} read the whole document"],
     )
     assert state["active_pdf_mode"] == config.PDF_BYTES
-    assert "gemini" in answers[-1].lower()
+    assert answers[-1]  # produced an answer rather than refusing/erroring
+    assert "needs the gemini backend" not in answers[-1].lower()

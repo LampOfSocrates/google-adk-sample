@@ -130,19 +130,52 @@ def test_build_dispatch_rejects_duplicate_mode(monkeypatch):
 
 
 # ===========================================================================
-# modes/pdfbytes.py — the gemini branch of the placeholder
+# modes/pdfbytes.py — the PDF-into-the-request injection (backend-independent)
 # ===========================================================================
-async def test_native_bytes_reports_planned_on_gemini(run_agent, monkeypatch):
-    """pdfbytes.py:31 — the `else` branch shown when the backend IS gemini.
+def _req_with_question(text: str):
+    """A minimal LlmRequest ending in a user turn, like ADK would build."""
+    from google.adk.models.llm_request import LlmRequest
 
-    The suite runs under mock, so normally only the "needs gemini" refusal is
-    hit. Forcing is_gemini() True exercises the "planned for a later phase"
-    message instead, without needing a real gemini backend.
-    """
-    monkeypatch.setattr(pdfbytes, "is_gemini", lambda: True)
-    agent = pdfbytes.build()[config.PDF_BYTES]
-    answer = await run_agent(agent, "read the whole document", {})
-    assert "planned" in answer.lower()
+    return LlmRequest(
+        contents=[types.Content(role="user", parts=[types.Part(text=text)])]
+    )
+
+
+def test_inject_pdf_attaches_a_document_part_to_the_user_turn():
+    """pdfbytes._inject_pdf appends the raw PDF as an inline application/pdf part
+    onto the final user content, so any doc-capable backend receives it."""
+    req = _req_with_question("read the whole document")
+    assert pdfbytes._inject_pdf(req, FIXTURE) is True
+
+    parts = req.contents[-1].parts
+    assert parts[0].text == "read the whole document"  # question preserved
+    pdf_parts = [p for p in parts if p.inline_data]
+    assert len(pdf_parts) == 1
+    blob = pdf_parts[0].inline_data
+    assert blob.mime_type == "application/pdf"
+    assert blob.data and blob.data[:5] == b"%PDF-"  # the actual file bytes
+
+
+def test_inject_pdf_is_a_noop_when_the_file_is_missing():
+    """No file -> nothing attached and False returned; the instruction then has the
+    model say the document is missing rather than the turn erroring."""
+    req = _req_with_question("read it")
+    assert pdfbytes._inject_pdf(req, "does/not/exist.pdf") is False
+    assert all(not p.inline_data for p in req.contents[-1].parts)
+
+
+async def test_attach_pdf_callback_reads_pdf_path_from_state():
+    """The before_model_callback pulls pdf_path off session state and injects it.
+
+    Runs under mock (the autouse backend), so it takes the inline path — not the
+    openai upload path."""
+
+    class _CbCtx:  # only `.state` is read
+        state = {"pdf_path": FIXTURE}
+
+    req = _req_with_question("summarize")
+    assert await pdfbytes._attach_pdf(_CbCtx(), req) is None  # proceed with the call
+    assert any(p.inline_data for p in req.contents[-1].parts)
 
 
 # ===========================================================================

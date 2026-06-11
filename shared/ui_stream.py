@@ -70,10 +70,13 @@ async def stream_ui_events(
     simulate_stream: bool = False,
     words_per_chunk: int = 3,
     debug_sink: list | None = None,
+    snapshot_fn=None,
 ) -> AsyncGenerator[UIEvent, None]:
-    """Yields flat `UIEvent`s for the chat. If `debug_sink` is a list, every raw
-    ADK event is also snapshotted into it (for the debug tab) — a pure side
-    channel that doesn't change what's yielded."""
+    """Yields flat `UIEvent`s for the chat. If `debug_sink` is a list AND a
+    `snapshot_fn(event, seq)` is given, every raw ADK event is also snapshotted
+    into it (for the debug tab) — a pure side channel that doesn't change what's
+    yielded. `snapshot_fn` is injected (rather than imported) so this shared
+    module stays independent of the apps layer that owns the debug view."""
     msg = types.Content(role="user", parts=[types.Part(text=message)])
     kwargs = {"user_id": user_id, "session_id": session_id, "new_message": msg}
     if _SSE is not None:
@@ -86,10 +89,8 @@ async def stream_ui_events(
     usage_totals = {"prompt": 0, "candidates": 0, "total": 0}
     try:
         async for event in runner.run_async(**kwargs):
-            if debug_sink is not None:
-                from .debug import snapshot_event  # local import: chat path stays clean
-
-                debug_sink.append(snapshot_event(event, seq))
+            if debug_sink is not None and snapshot_fn is not None:
+                debug_sink.append(snapshot_fn(event, seq))
                 seq += 1
             um = getattr(event, "usage_metadata", None)
             if um is not None:

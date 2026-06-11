@@ -290,6 +290,11 @@ def render_agent_tree(root_agent) -> None:
 
 
 # ------------------------------------------------------------------ render ---
+def _toks(n: int) -> str:
+    """'1,240 tokens', or 'tokens n/a' for backends (mock) that report none."""
+    return f"{n:,} tokens" if n else "tokens n/a"
+
+
 def _turn_totals(snapshots: list[EventSnapshot]) -> dict:
     tool_calls = sum(1 for s in snapshots for p in s.parts if p.kind == "tool_call")
     tokens = 0
@@ -345,20 +350,16 @@ def render_debug_tab(turns: list[dict], root_agent=None) -> None:
         st.info("No turns yet — send a message in the **💬 Chat** tab.")
         return
 
-    # Aggregate across the whole conversation.
+    # Conversation totals on ONE caption line (the old 4-metric grid was ~80px tall).
     grand = {"events": 0, "tool_calls": 0, "tokens": 0}
     for t in turns:
         tt = _turn_totals(t["snapshots"])
         for k in grand:
             grand[k] += tt[k]
-
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Turns", len(turns))
-    c2.metric("Events", grand["events"])
-    c3.metric("Tool calls", grand["tool_calls"])
-    c4.metric("Total tokens", grand["tokens"] or "—")
-
-    st.divider()
+    st.caption(
+        f"📊 **{len(turns)}** turn(s) · {grand['events']} events · "
+        f"{grand['tool_calls']} tool calls · {_toks(grand['tokens'])}"
+    )
 
     # Turn picker — default to the latest.
     labels = [
@@ -367,38 +368,42 @@ def render_debug_tab(turns: list[dict], root_agent=None) -> None:
     ]
     idx = st.selectbox(
         "Turn", range(len(turns)), index=len(turns) - 1,
-        format_func=lambda i: labels[i],
+        format_func=lambda i: labels[i], label_visibility="collapsed",
     )
     turn = turns[idx]
     snaps = turn["snapshots"]
     tt = _turn_totals(snaps)
-
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Latency", f"{turn.get('latency', 0):.2f}s")
-    m2.metric("Events", tt["events"])
-    m3.metric("Tool calls", tt["tool_calls"])
-    m4.metric("Tokens", tt["tokens"] or "—")
-
-    # At-a-glance shape of the turn, next to the counts above.
-    st.caption("Event flow")
-    st.markdown(_event_flow(snaps))
     by_author = _events_by_author(snaps)
+
+    # Per-turn summary + event-flow + per-agent counts, folded into one block (was
+    # a second 4-metric grid plus three separate caption lines).
     st.caption(
-        "Events per agent — "
-        + " · ".join(f"**{a}**: {n}" for a, n in by_author.items())
+        f"⏱ {turn.get('latency', 0):.2f}s · {tt['events']} events · "
+        f"{tt['tool_calls']} tools · {_toks(tt['tokens'])}  \n"
+        f"{_event_flow(snaps)}  \n"
+        "agents — " + " · ".join(f"**{a}**: {n}" for a, n in by_author.items())
     )
 
-    # Session state + artifacts.
+    # Session state + raw export side by side, both compact and collapsed.
     session = turn.get("session") or {}
-    with st.expander("🗃️ Session state", expanded=False):
+    left, right = st.columns([3, 1])
+    with left.expander("🗃️ Session state", expanded=False):
         if session.get("state_error"):
             st.warning(session["state_error"])
         st.json(session.get("state", {}))
         arts = session.get("artifacts", [])
         st.caption(f"Artifacts: {', '.join(arts) if arts else 'none'}")
+    right.download_button(
+        "⬇️ JSON",
+        data=json.dumps([s.raw for s in snaps], indent=2, default=str),
+        file_name=f"adk_turn_{idx + 1}_events.json",
+        mime="application/json",
+        use_container_width=True,
+        help="Download this turn's raw ADK events",
+    )
 
-    # Per-event timeline.
-    st.subheader("Events")
+    # Per-event timeline. One expander per event; raw JSON behind a popover so it
+    # doesn't nest expanders (which Streamlit forbids) or add a second collapse row.
     t0 = next((s.timestamp for s in snaps if s.timestamp), None)
     for s in snaps:
         badges = " ".join(_KIND_BADGE.get(k, k) for k in s.kinds) or "—"
@@ -407,7 +412,7 @@ def render_debug_tab(turns: list[dict], root_agent=None) -> None:
         # usage_metadata is only set when the event is the product of a real model
         # round-trip -> it's the cleanest "this was an LLM call" signal (tool
         # results, injected by the runner, never carry it).
-        llm = "🤖 LLM · " if s.usage else ""
+        llm = "🤖 " if s.usage else ""
         title = f"#{s.seq} · {llm}{s.author} · {badges}"
         if rel:
             title += f" · {rel}"
@@ -428,15 +433,5 @@ def render_debug_tab(turns: list[dict], root_agent=None) -> None:
                     st.json(p.tool_result)
                 elif p.kind in ("thinking", "text"):
                     st.markdown(f"_{p.kind}_: {p.text}")
-            with st.expander("raw event JSON", expanded=False):
+            with st.popover("raw event JSON"):
                 st.json(s.raw)
-
-    # Export — the `adk web` "download" equivalent.
-    payload = json.dumps([s.raw for s in snaps], indent=2, default=str)
-    st.download_button(
-        "⬇️ Download raw events (JSON)",
-        data=payload,
-        file_name=f"adk_turn_{idx + 1}_events.json",
-        mime="application/json",
-        use_container_width=True,
-    )

@@ -101,3 +101,20 @@ async def test_live_corpus_mode_vega_by_region(converse, corpus_db, monkeypatch)
     # It actually grouped by region and read the corpus: every region is named.
     for region in ("Americas", "EMEA", "APAC"):
         assert region in answers[-1]
+
+
+# --------------------------------------------------------- native bytes mode ----
+async def test_live_bytes_mode_total_vega(converse):
+    """Live PDF_BYTES mode: the raw PDF is handed to the model (no extraction) and a
+    real, document-capable backend reads the golden total vega straight out of it.
+
+    The coordinator resolves the default fixture PDF, so no session state is needed.
+    Skips on backends with no document input (e.g. deepseek), which legitimately
+    can't run this mode."""
+    answers, state = await converse(
+        root_agent, [f"mode: {config.PDF_BYTES} what is the total vega?"]
+    )
+    assert state["active_pdf_mode"] == config.PDF_BYTES
+    if "does not support content part" in answers[-1].lower():
+        pytest.skip(f"backend has no PDF document input: {answers[-1]}")
+    assert _has_number(answers[-1], VEGA)

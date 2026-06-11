@@ -35,7 +35,8 @@ lives in tools / stores / custom `BaseAgent`s — **never** an `LlmAgent`. Only
 
 ## Mode names — use these constants exactly (see `config.py`)
 `LLM_GETS_ALL_TABLES_AS_TEXT` · `LLM_GETS_SOME_TABLES_AS_TEXT` ·
-`LLM_MAKES_SQL_FROM_CHAT` · `LLM_GETS_PDF_BYTES` (gemini-only, placeholder) ·
+`LLM_MAKES_SQL_FROM_CHAT` · `LLM_GETS_PDF_BYTES` (raw PDF to the model; any
+doc-capable backend — gemini native, openai/bedrock via LiteLlm, deepseek N/A) ·
 `LLM_QUERIES_CORPUS` (whole-corpus DuckDB across all reports) ·
 `auto` (sentinel: let the LLM router decide).
 
