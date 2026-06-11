@@ -2,7 +2,7 @@
 
 **Framing.** The suite proves the agent *graph runs* offline; it barely proves the
 agent *answers correctly*. Two assets make that cheap to fix now:
-`tests/fixtures/risk_report.pdf` + `risk_report.golden.json` (known-truth data) and
+`tests/pdf_insight/fixtures/risk_report.pdf` + `risk_report.golden.json` (known-truth data) and
 `shared/mock_pdf_llm.py` (`MockPdfLlm`, golden-accurate offline answers). Every gap
 below is closable with tooling that already exists.
 

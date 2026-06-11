@@ -17,6 +17,12 @@ Tracked follow-ups (not blocking; each is self-contained).
   `extract_tables`. Likely in `shared/mock_llm.py` (keep `extract_tables` the
   default so existing routing tests hold).
 
+- [ ] **Concurrency/idempotency of corpus append under repeated/parallel uploads.**
+  `ingest_pdf_everywhere` appends to the corpus DuckDB idempotently per `report_date`,
+  but this isn't explicitly tested under repeated or parallel uploads. Add tests that
+  re-ingest the same report (assert no duplicate rows) and that concurrent uploads of
+  distinct reports don't corrupt the corpus or interleave partial writes.
+
 ## Known deferred (not TODO-marked, for visibility)
 
 - [ ] **`PostgresStore` implementation** (`apps/pdf_insight/stores/postgres_store.py`).

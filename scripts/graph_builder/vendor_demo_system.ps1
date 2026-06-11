@@ -10,7 +10,7 @@
 # not the whole repo. Run from the project root:  ./scripts/graph_builder/vendor_demo_system.ps1
 
 $ErrorActionPreference = "Stop"
-$dest = "tests/fixtures/online_boutique"
+$dest = "tests/graph_builder/fixtures/online_boutique"
 $repo = "https://github.com/GoogleCloudPlatform/microservices-demo.git"
 
 if (Test-Path $dest) {

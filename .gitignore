@@ -22,7 +22,7 @@ Thumbs.db
 .DS_Store
 
 # Vendored real demo for L0 integration (pulled by scripts/vendor_demo_system.ps1)
-tests/fixtures/online_boutique/
+tests/graph_builder/fixtures/online_boutique/
 
 # Weekly generated report corpus (regenerable: scripts/pdf_insight/weekly_report.py) + DuckDB
 tests/pdf_insight/samples/*.pdf

@@ -7,7 +7,7 @@ from apps.pdf_insight.stores.sqlite_store import (
     run_sql,
 )
 
-PDF = "tests/fixtures/risk_report.pdf"
+PDF = "tests/pdf_insight/fixtures/risk_report.pdf"
 
 
 class _Ctx:

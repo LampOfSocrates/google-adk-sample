@@ -26,7 +26,7 @@ from apps.pdf_insight.stores.corpus_tools import (
 from apps.pdf_insight.stores.duckdb_store import _jsonable
 from apps.pdf_insight.modes import _common, corpus, pdfbytes, pdfpart, text2sql
 
-FIXTURE = "tests/fixtures/risk_report.pdf"
+FIXTURE = "tests/pdf_insight/fixtures/risk_report.pdf"
 
 
 class _Ctx:
@@ -228,7 +228,7 @@ def test_list_corpus_schema_surfaces_db_errors(tmp_path):
     """duckdb_store.py — the `except duckdb.Error` in DuckDBStore.list_schema.
 
     The DB file exists (so the missing-file guard passes) but has none of the
-    expected registry tables, so querying pdf_tables raises a CatalogException.
+    expected registry tables, so querying `families` raises a CatalogException.
     That must become an error dict, not a traceback.
     """
     db = str(tmp_path / "empty.duckdb")

@@ -29,7 +29,7 @@ pytestmark = pytest.mark.live
 # resolves LLM_BACKEND per turn), and the autouse `_backend_env` fixture pins the
 # live backend for live-marked tests at run time — so no purge+reimport is needed.
 
-GOLD = json.load(open("tests/fixtures/risk_report.golden.json", encoding="utf-8"))["facts"]
+GOLD = json.load(open("tests/pdf_insight/fixtures/risk_report.golden.json", encoding="utf-8"))["facts"]
 VEGA = GOLD["totals"]["vega"]            # 6384
 REGION_MAX_VEGA = GOLD["region_max_vega"]  # "Americas"
 

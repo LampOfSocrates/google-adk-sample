@@ -22,7 +22,6 @@
     {
       "index": 0,
       "title": "Risk Summary by Region",
-      "style": "ruled",
       "columns": [
         "Region",
         "Pos",
@@ -84,13 +83,11 @@
           "5,011",
           "526"
         ]
-      ],
-      "has_total": true
+      ]
     },
     {
       "index": 1,
       "title": "Risk Summary by Asset Class",
-      "style": "ruled",
       "columns": [
         "Asset Class",
         "Pos",
@@ -176,13 +173,11 @@
           "5,011",
           "526"
         ]
-      ],
-      "has_total": true
+      ]
     },
     {
       "index": 2,
       "title": "Risk Summary by Desk",
-      "style": "ruled",
       "columns": [
         "Desk",
         "Pos",
@@ -268,13 +263,11 @@
           "5,011",
           "526"
         ]
-      ],
-      "has_total": true
+      ]
     },
     {
       "index": 3,
       "title": "Portfolio KPI Totals",
-      "style": "ruled",
       "columns": [
         "Metric",
         "Value"
@@ -316,13 +309,11 @@
           "Daily P&L ($k)",
           "526"
         ]
-      ],
-      "has_total": false
+      ]
     },
     {
       "index": 4,
       "title": "Vega by Region x Asset Class ($k)",
-      "style": "ruled",
       "columns": [
         "Asset Class",
         "Americas",
@@ -373,13 +364,11 @@
           "1,568",
           "6,384"
         ]
-      ],
-      "has_total": true
+      ]
     },
     {
       "index": 5,
       "title": "Delta by Desk x Tenor ($k)",
-      "style": "ruled",
       "columns": [
         "Desk",
         "0-1M",
@@ -444,13 +433,11 @@
           "812",
           "3,945"
         ]
-      ],
-      "has_total": true
+      ]
     },
     {
       "index": 6,
       "title": "Gamma by Asset Class x Tenor ($k)",
-      "style": "ruled",
       "columns": [
         "Asset Class",
         "0-1M",
@@ -515,13 +502,11 @@
           "1,199",
           "6,678"
         ]
-      ],
-      "has_total": true
+      ]
     },
     {
       "index": 7,
       "title": "Rho by Region x Currency ($k)",
-      "style": "ruled",
       "columns": [
         "Region",
         "EUR",
@@ -563,13 +548,11 @@
           "-34",
           "-77"
         ]
-      ],
-      "has_total": true
+      ]
     },
     {
       "index": 8,
       "title": "Top 8 Underlyings by |Vega|",
-      "style": "ruled",
       "columns": [
         "Rank",
         "Underlying",
@@ -661,13 +644,11 @@
           "-26",
           "311"
         ]
-      ],
-      "has_total": false
+      ]
     },
     {
       "index": 9,
       "title": "Top 8 Books by 1d VaR",
-      "style": "ruled",
       "columns": [
         "Rank",
         "Book",
@@ -759,13 +740,11 @@
           "-1",
           "233"
         ]
-      ],
-      "has_total": false
+      ]
     },
     {
       "index": 10,
       "title": "Greeks by Tenor Bucket",
-      "style": "ruled",
       "columns": [
         "Tenor",
         "Pos",
@@ -851,13 +830,11 @@
           "5,011",
           "526"
         ]
-      ],
-      "has_total": true
+      ]
     },
     {
       "index": 11,
       "title": "Risk by Region x Asset Class",
-      "style": "ruled",
       "columns": [
         "Region",
         "Asset Class",
@@ -1012,13 +989,11 @@
           "-2,298",
           "-77"
         ]
-      ],
-      "has_total": true
+      ]
     },
     {
       "index": 12,
       "title": "Daily Risk Trend",
-      "style": "ruled",
       "columns": [
         "Date",
         "Pos",
@@ -1108,13 +1083,11 @@
           "482",
           "16"
         ]
-      ],
-      "has_total": false
+      ]
     },
     {
       "index": 13,
       "title": "Vega Ladder by Tenor (SPX)",
-      "style": "ruled",
       "columns": [
         "Tenor",
         "Pos",
@@ -1158,13 +1131,11 @@
           "82",
           "244"
         ]
-      ],
-      "has_total": false
+      ]
     },
     {
       "index": 14,
       "title": "Risk Summary by Currency",
-      "style": "ruled",
       "columns": [
         "Currency",
         "Pos",
@@ -1238,13 +1209,11 @@
           "5,011",
           "526"
         ]
-      ],
-      "has_total": true
+      ]
     },
     {
       "index": 15,
       "title": "Stress P&L by Scenario",
-      "style": "ruled",
       "columns": [
         "Scenario",
         "P&L Impact($k)"
@@ -1274,8 +1243,7 @@
           "Rates -50bp",
           "38.5"
         ]
-      ],
-      "has_total": false
+      ]
     }
   ]
 }

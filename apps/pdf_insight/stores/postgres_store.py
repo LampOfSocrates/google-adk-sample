@@ -44,7 +44,8 @@ class PostgresStore(SqlStore):
     def ingest_pdf(self, pdf_path: str, report_date: str | None = None,
                    strategy: str = "lines", title_for=None) -> dict:
         # Real impl: COPY/INSERT the extracted tables into the same canonical
-        # schema DuckDBStore.ingest_pdf builds (documents + pdf_tables + tNN).
+        # schema DuckDBStore.ingest_pdf builds (documents + doc_tables + families +
+        # per-doc physical tables + union views).
         raise NotImplementedError(
             "PostgresStore is a placeholder: implement ingest_pdf when psycopg "
-            "is added (write the canonical documents/pdf_tables/tNN schema).")
+            "is added (write the canonical documents/doc_tables/families schema).")

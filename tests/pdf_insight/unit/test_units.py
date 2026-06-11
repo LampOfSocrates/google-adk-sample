@@ -9,7 +9,7 @@ from apps.pdf_insight.modes._common import (
 )
 from shared import pdf_extractor as pdf
 
-FIXTURE = "tests/fixtures/risk_report.pdf"
+FIXTURE = "tests/pdf_insight/fixtures/risk_report.pdf"
 
 
 @pytest.mark.parametrize("text, expected", [

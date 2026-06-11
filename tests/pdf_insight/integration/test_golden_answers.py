@@ -1,7 +1,7 @@
 """Correctness, not just wiring: MockPdfLlm must produce the GOLDEN numbers.
 
 Builds targeted agents on MockPdfLlm (the domain-aware offline mock) and asserts
-the answers match tests/fixtures/risk_report.golden.json across the modes that
+the answers match tests/pdf_insight/fixtures/risk_report.golden.json across the modes that
 answer questions: tables-as-text, single-PDF SQL, and the DuckDB corpus.
 """
 import datetime as dt
@@ -18,8 +18,8 @@ from apps.pdf_insight.stores.sqlite_store import ingest_tables_to_sqlite, list_s
 from scripts.pdf_insight.pdf_to_duckdb import ingest_dir
 from scripts.pdf_insight.weekly_report import generate_for
 
-FIXTURE = "tests/fixtures/risk_report.pdf"
-GOLD = json.load(open("tests/fixtures/risk_report.golden.json", encoding="utf-8"))["facts"]
+FIXTURE = "tests/pdf_insight/fixtures/risk_report.pdf"
+GOLD = json.load(open("tests/pdf_insight/fixtures/risk_report.golden.json", encoding="utf-8"))["facts"]
 VEGA = f'{GOLD["totals"]["vega"]:,}'      # "6,384"
 DELTA = f'{GOLD["totals"]["delta"]:,}'    # "9,152"
 
@@ -100,10 +100,14 @@ def corpus_db(tmp_path_factory):
 async def test_corpus_total_vega_by_region_leads_with_truth(run_agent, corpus_db):
     db, _ = corpus_db
     a = await run_agent(_corpus_agent(), "Total vega by region across all reports", {"corpus_db": db})
-    # truth: which region has the largest summed vega across the corpus
+    # truth: which region has the largest summed vega across the corpus. Resolve the
+    # region family view from the registry (table names are per-shape views now).
+    ctx = type("C", (), {"state": {"corpus_db": db}})()
+    view = next(t["table"] for t in list_corpus_schema(ctx)["tables"]
+                if t["title"] == "Risk Summary by Region")
     truth = run_corpus_sql(
-        "SELECT region FROM t00 WHERE NOT is_total GROUP BY region "
-        "ORDER BY SUM(vega_k) DESC LIMIT 1", type("C", (), {"state": {"corpus_db": db}})()
+        f'SELECT region FROM "{view}" WHERE NOT is_total GROUP BY region '
+        "ORDER BY SUM(vega_k) DESC LIMIT 1", ctx
     )["rows"][0][0]
     assert a.split()[0] == "Vega" or truth in a  # mention present...
     assert truth in a                              # ...and the leading region is the true one

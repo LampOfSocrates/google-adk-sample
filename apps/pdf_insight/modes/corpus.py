@@ -20,18 +20,19 @@ from google.adk.agents import LlmAgent
 from .. import config
 from ..stores import SqlStore, get_corpus_store, list_corpus_schema, run_corpus_sql
 
-# Engine-neutral guidance. The schema specifics (t00..t15, report_date, is_total,
-# the registry) are about the data model, which is the same on any SQL engine.
+# Engine-neutral guidance. The schema specifics (the registry, report_date,
+# is_total, the union views) are about the data model, the same on any SQL engine.
 _CORPUS_GUIDANCE = (
-    "You answer questions over a SQL database of PDF report tables spanning many "
-    "weekly reports.\n"
-    "1) Call list_corpus_schema FIRST — it returns the table registry (index -> title "
-    "-> columns) and the report_date range covered.\n"
-    "2) Write ONE read-only SELECT (a WITH/CTE is fine), call run_corpus_sql, then "
-    "answer from the rows.\n"
-    "Tables t00..t15 each accumulate rows across weeks: filter by report_date for a "
-    "single week, or GROUP BY report_date for a trend. Exclude each table's own "
-    "subtotal with `WHERE NOT is_total` before SUM/AVG. Never write or modify data."
+    "You answer questions over a SQL database of tables extracted from many PDF "
+    "reports — possibly different KINDS of report.\n"
+    "1) Call list_corpus_schema FIRST — it returns the queryable tables (each a view "
+    "with a `table` name, title and columns) and the report_date range covered.\n"
+    "2) Write ONE read-only SELECT (a WITH/CTE is fine) against a table name from the "
+    "registry, call run_corpus_sql, then answer from the rows.\n"
+    "Each registry entry is a VIEW that unions every report sharing that table's "
+    "shape, so its rows span reports: filter by report_date for a single report, or "
+    "GROUP BY report_date for a trend. Exclude each table's own subtotal with "
+    "`WHERE NOT is_total` before SUM/AVG. Never write or modify data."
 )
 
 

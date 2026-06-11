@@ -46,8 +46,8 @@ height). Builders live in build_tables():
     15 Stress P&L by Scenario           derived from aggregate Greeks (spot/vol/rate)
 
 CLI:
-    python scripts/pdf_insight/pdf_creator.py --out tests/fixtures/risk_report.pdf \
-        --golden tests/fixtures/risk_report.golden.json --pages 4 --seed 42
+    python scripts/pdf_insight/pdf_creator.py --out tests/pdf_insight/fixtures/risk_report.pdf \
+        --golden tests/pdf_insight/fixtures/risk_report.golden.json --pages 4 --seed 42
 """
 from __future__ import annotations
 
@@ -315,6 +315,65 @@ def scenario_table(index, title, rows) -> Table:
     return Table(index, title, ["Scenario", "P&L Impact($k)"], out_rows)
 
 
+# ---- a SECOND KIND of report: funding / liquidity ---------------------------
+# Deliberately DIFFERENT column shapes from the Greeks tables above, so the corpus
+# keeps the two kinds' tables in separate families (the multi-kind test relies on
+# this). Values derive from the SAME base dataset to stay seed-reproducible.
+def funding_by_currency(index, title, rows, ccy_order) -> Table:
+    g = agg_by(rows, lambda r: r["currency"], ["notional", "var"])
+    cols = ["Currency", "Accounts", "Funding($m)", "HQLA($k)", "NetGap($k)"]
+    out = [[c, _fmt(g[c]["__count"]), _fmt(g[c]["notional"]), _fmt(g[c]["var"]),
+            _fmt(g[c]["notional"] - g[c]["var"])] for c in ccy_order if c in g]
+    tot_c = sum(g[c]["__count"] for c in g)
+    tot_n = sum(g[c]["notional"] for c in g)
+    tot_v = sum(g[c]["var"] for c in g)
+    out.append(["Total", _fmt(tot_c), _fmt(tot_n), _fmt(tot_v), _fmt(tot_n - tot_v)])
+    return Table(index, title, cols, out, has_total=True)
+
+
+def liquidity_by_tenor(index, title, rows) -> Table:
+    g = agg_by(rows, lambda r: r["tenor_bucket"], ["notional", "pnl"])
+    cols = ["Tenor", "Inflow($m)", "Outflow($m)", "Cumulative($m)"]
+    out, cum = [], 0
+    for t in TENORS:
+        if t in g:
+            inflow, outflow = g[t]["notional"], abs(g[t]["pnl"])
+            cum += inflow - outflow
+            out.append([t, _fmt(inflow), _fmt(outflow), _fmt(cum)])
+    return Table(index, title, cols, out)
+
+
+def exposure_by_region(index, title, rows) -> Table:
+    g = agg_by(rows, lambda r: r["region"], ["notional", "var"])
+    cols = ["Region", "Gross($m)", "PFE($k)", "Limit($m)", "Headroom($m)"]
+    out = [[rg, _fmt(g[rg]["notional"]), _fmt(g[rg]["var"]),
+            _fmt(g[rg]["notional"] + 50), _fmt(50)] for rg in REGIONS if rg in g]
+    return Table(index, title, cols, out)
+
+
+def funding_kpi_table(index, title, rows) -> Table:
+    tot_n = sum(r["notional"] for r in rows)
+    tot_v = sum(r["var"] for r in rows)
+    data = [
+        ("Accounts", _fmt(len(rows))),
+        ("Total Funding ($m)", _fmt(tot_n)),
+        ("HQLA Buffer ($k)", _fmt(tot_v)),
+        ("LCR (%)", _fmt(round(100 * tot_v / max(1, tot_n)))),
+    ]
+    return Table(index, title, ["Liquidity Metric", "Value"], [list(d) for d in data])
+
+
+def build_funding_tables(rows: list[dict]) -> list[Table]:
+    """The 'funding' report kind — 4 tables, every shape distinct from 'greeks'."""
+    ccy_order = sorted({r["currency"] for r in rows})
+    return [
+        funding_by_currency(0, "Funding by Currency", rows, ccy_order),
+        liquidity_by_tenor(1, "Liquidity Ladder by Tenor", rows),
+        exposure_by_region(2, "Counterparty Exposure by Region", rows),
+        funding_kpi_table(3, "Funding KPI Totals", rows),
+    ]
+
+
 # The canonical 16-table layout (order = page order).
 def build_tables(rows: list[dict]) -> list[Table]:
     ccy_order = sorted({r["currency"] for r in rows})
@@ -341,6 +400,11 @@ def build_tables(rows: list[dict]) -> list[Table]:
         lambda i: scenario_table(i, "Stress P&L by Scenario", rows),
     ]
     return [spec(i) for i, spec in enumerate(specs)]
+
+
+# Report kinds: the table layout differs by kind; the golden facts (computed from
+# the base dataset, not the rendered tables) are the same shape either way.
+KIND_BUILDERS = {"greeks": build_tables, "funding": build_funding_tables}
 
 
 # ------------------------------------------------------------------ golden ---
@@ -435,17 +499,19 @@ def _table_style(t: Table) -> TableStyle:
 
 # ------------------------------------------------------------------- public ---
 def create_test_pdf(out_path: str, *, pages: int = 4, seed: int = 42,
-                    golden_path: str | None = None) -> dict:
+                    golden_path: str | None = None, kind: str = "greeks") -> dict:
     """Generate the test PDF (and optionally the golden file). Returns the golden dict.
 
     Args:
         out_path: where to write the .pdf.
-        pages: target page count (the 16 tables are balanced across them).
+        pages: target page count (tables are balanced across them).
         seed: RNG seed -> deterministic, byte-stable output.
         golden_path: if given, write the golden JSON here too.
+        kind: which report layout to render — 'greeks' (16 Greek tables) or
+            'funding' (4 funding/liquidity tables with distinct column shapes).
     """
     rows = build_dataset(seed)
-    tables = build_tables(rows)
+    tables = KIND_BUILDERS[kind](rows)
 
     os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
     _render(tables, out_path, pages)
@@ -460,14 +526,17 @@ def create_test_pdf(out_path: str, *, pages: int = 4, seed: int = 42,
 
 def _main() -> None:
     p = argparse.ArgumentParser(description="Generate a synthetic risk-report test PDF.")
-    p.add_argument("--out", default=os.path.join("tests", "fixtures", "risk_report.pdf"))
+    p.add_argument("--out", default=os.path.join("tests", "pdf_insight", "fixtures", "risk_report.pdf"))
     p.add_argument("--golden", default=None, help="path to also write golden_answers.json")
     p.add_argument("--pages", type=int, default=4)
     p.add_argument("--seed", type=int, default=42)
+    p.add_argument("--kind", default="greeks", choices=list(KIND_BUILDERS),
+                   help="report layout: 'greeks' (16 tables) or 'funding' (4 tables)")
     a = p.parse_args()
-    golden = create_test_pdf(a.out, pages=a.pages, seed=a.seed, golden_path=a.golden)
+    golden = create_test_pdf(a.out, pages=a.pages, seed=a.seed, golden_path=a.golden,
+                             kind=a.kind)
     print(f"Wrote {a.out}: {len(golden['tables'])} tables across {a.pages} page(s), "
-          f"seed={a.seed}.")
+          f"kind={a.kind}, seed={a.seed}.")
     if a.golden:
         print(f"Wrote golden -> {a.golden}")
     print("Totals:", golden["facts"]["totals"])

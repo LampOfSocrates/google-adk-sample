@@ -9,9 +9,9 @@ trends.
     python scripts/pdf_insight/pdf_to_duckdb.py --reset               # rebuild from scratch
     python scripts/pdf_insight/pdf_to_duckdb.py --query "SELECT ..."  # ad-hoc check
 
-The actual ingestion (the canonical documents/pdf_tables/tNN schema) lives in
-`DuckDBStore.ingest_pdf` — the SAME code path the runtime upload handler uses, so
-the offline corpus and an uploaded one are built identically. This script just
+The actual ingestion (per-document tables + the families/union-view schema) lives
+in `DuckDBStore.ingest_pdf` — the SAME code path the runtime upload handler uses,
+so the offline corpus and an uploaded one are built identically. This script just
 batches a folder and supplies table titles from the sibling .golden.json files.
 """
 from __future__ import annotations

@@ -24,6 +24,13 @@ class _Ctx:
         self.state = state or {}
 
 
+def _view(db: str, title: str) -> str:
+    """Resolve a family view name from the registry. Corpus table names are now
+    per-shape union VIEWS (fam_*), not positional t00 — look them up by title."""
+    sch = list_corpus_schema(_Ctx({"corpus_db": db}))
+    return next(t["table"] for t in sch["tables"] if t["title"] == title)
+
+
 @pytest.fixture(scope="module")
 def corpus(tmp_path_factory):
     """Generate WEEKS dated reports, ingest into one DuckDB; return (db, goldens)."""
@@ -47,10 +54,10 @@ def test_schema_lists_all_tables_and_coverage(corpus):
     assert out["documents"]["count"] == len(WEEKS)
     assert out["documents"]["from"] == WEEKS[0].isoformat()
     assert out["documents"]["to"] == WEEKS[-1].isoformat()
-    assert len(out["tables"]) == 16
-    t00 = next(t for t in out["tables"] if t["table"] == "t00")
-    assert t00["title"] == "Risk Summary by Region"
-    assert any("vega" in c for c in t00["columns"])
+    assert len(out["tables"]) == 16  # 16 distinct shapes -> 16 family views
+    region = next(t for t in out["tables"] if t["title"] == "Risk Summary by Region")
+    assert any("vega" in c for c in region["columns"])
+    assert region["documents"] == len(WEEKS)  # its view unions every week's table
 
 
 # ------------------------------------------------------------ trust boundary --
@@ -84,7 +91,8 @@ def test_missing_db_is_clean_error(tmp_path):
 
 def test_date_column_serializes_as_iso_string(corpus):
     db, _ = corpus
-    out = run_corpus_sql("SELECT DISTINCT report_date FROM t00 ORDER BY 1", _Ctx({"corpus_db": db}))
+    view = _view(db, "Risk Summary by Region")
+    out = run_corpus_sql(f'SELECT DISTINCT report_date FROM "{view}" ORDER BY 1', _Ctx({"corpus_db": db}))
     assert out["status"] == "success"
     # DATE must survive ADK's JSON function_response as a string, not a date object.
     assert out["rows"][0][0] == WEEKS[0].isoformat()
@@ -102,17 +110,19 @@ def test_jsonable_coercions():
 def test_per_week_total_vega_matches_golden(corpus):
     db, goldens = corpus
     ctx = _Ctx({"corpus_db": db})
+    view = _view(db, "Risk Summary by Region")
     for wk, facts in goldens.items():
         out = run_corpus_sql(
-            f"SELECT SUM(vega_k) FROM t00 WHERE NOT is_total AND report_date='{wk}'", ctx
+            f"SELECT SUM(vega_k) FROM \"{view}\" WHERE NOT is_total AND report_date='{wk}'", ctx
         )
         assert int(out["rows"][0][0]) == facts["totals"]["vega"]
 
 
 def test_trend_returns_one_row_per_week_in_order(corpus):
     db, _ = corpus
+    view = _view(db, "Risk Summary by Region")
     out = run_corpus_sql(
-        "SELECT report_date, SUM(vega_k) FROM t00 WHERE NOT is_total "
+        f'SELECT report_date, SUM(vega_k) FROM "{view}" WHERE NOT is_total '
         "GROUP BY report_date ORDER BY report_date", _Ctx({"corpus_db": db})
     )
     dates = [r[0] for r in out["rows"]]
@@ -122,7 +132,8 @@ def test_trend_returns_one_row_per_week_in_order(corpus):
 def test_is_total_flag_excludes_subtotal(corpus):
     db, _ = corpus
     ctx = _Ctx({"corpus_db": db})
-    without = run_corpus_sql("SELECT SUM(vega_k) FROM t00 WHERE NOT is_total", ctx)["rows"][0][0]
-    with_tot = run_corpus_sql("SELECT SUM(vega_k) FROM t00", ctx)["rows"][0][0]
+    view = _view(db, "Risk Summary by Region")
+    without = run_corpus_sql(f'SELECT SUM(vega_k) FROM "{view}" WHERE NOT is_total', ctx)["rows"][0][0]
+    with_tot = run_corpus_sql(f'SELECT SUM(vega_k) FROM "{view}"', ctx)["rows"][0][0]
     # the per-table Total row duplicates the sum of its rows -> 2x when included.
     assert with_tot == pytest.approx(without * 2)

@@ -111,16 +111,18 @@ pytest -m e2e         tests/pdf_insight     # live modes (needs a key)
 and `data/pdf_corpus.duckdb` are gitignored (regenerable).
 ```bash
 # canonical fixture (committed) + golden answers, seed 42
-python scripts/pdf_insight/pdf_creator.py --out tests/fixtures/risk_report.pdf \
-    --golden tests/fixtures/risk_report.golden.json --pages 4 --tables 16 --seed 42
+python scripts/pdf_insight/pdf_creator.py --out tests/pdf_insight/fixtures/risk_report.pdf \
+    --golden tests/pdf_insight/fixtures/risk_report.golden.json --pages 4 --tables 16 --seed 42
 
 # dated weekly report(s) into tests/pdf_insight/samples/ (seed derived from the date)
 python scripts/pdf_insight/weekly_report.py                 # this week's Friday
 python scripts/pdf_insight/weekly_report.py --backfill 6    # seed the corpus: last 6 Fridays
 
-# scan the samples, extract every table → data/pdf_corpus.duckdb (keyed by report_date)
+# scan the samples; each PDF lands as its own tables, unioned per shape into views
 python scripts/pdf_insight/pdf_to_duckdb.py --reset
-python scripts/pdf_insight/pdf_to_duckdb.py --query "SELECT table_index, title FROM pdf_tables"
+python scripts/pdf_insight/pdf_to_duckdb.py --query "SELECT view_name, title, columns FROM families"
+# then query a family view by its name (from the registry above), e.g.:
+python scripts/pdf_insight/pdf_to_duckdb.py --query "SELECT report_date, region, vega_k FROM fam_00_<id> WHERE NOT is_total ORDER BY report_date"
 ```
 On Windows PowerShell, invoke via the venv, e.g. `.venv\Scripts\python.exe scripts\pdf_insight\pdf_to_duckdb.py --reset`.
 
@@ -273,7 +275,7 @@ building the whole scanner crew. On `mock` the resolver can't reason → all-new
 → which is exactly the failure the real `gemini` run must fix.
 
 **Cost / what's still owed.** L0 stays unbuilt: the golden fixture
-(`tests/fixtures/sample_repo1/`) and the `l0-survey-agent.md` spec are ready, but no survey
+(`tests/graph_builder/fixtures/sample_repo1/`) and the `l0-survey-agent.md` spec are ready, but no survey
 agent/tools consume them yet. Until L0 lands, the graph has no clickable ground truth — it's
 a resolution demo, not the full product.
 

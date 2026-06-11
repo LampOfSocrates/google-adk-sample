@@ -99,7 +99,7 @@ async def test_sql_mode_reingests_when_pdf_changes(run_agent, monkeypatch):
         lambda pdf_path, db_path: (calls.append(pdf_path), real(pdf_path, db_path))[1],
     )
 
-    fixture = "tests/fixtures/risk_report.pdf"
+    fixture = "tests/pdf_insight/fixtures/risk_report.pdf"
     agent = sqlmod.build()[config.SQL_FROM_TEXT]
     await run_agent(agent, "how many rows?", {
         "pdf_path": fixture,

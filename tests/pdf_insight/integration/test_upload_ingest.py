@@ -13,7 +13,18 @@ from apps.pdf_insight.ingest import ingest_pdf_everywhere
 from apps.pdf_insight.stores import DuckDBStore, SQLiteStore
 from apps.pdf_insight.stores import duckdb_store
 
-FIXTURE = "tests/fixtures/risk_report.pdf"
+FIXTURE = "tests/pdf_insight/fixtures/risk_report.pdf"
+
+
+def _view_with(store, *needles):
+    """Resolve a family view whose columns contain all `needles`. Corpus tables are
+    per-shape union VIEWS (fam_*) now, not positional t00 — and a runtime ingest has
+    no golden titles, so we match on columns rather than title."""
+    for t in store.list_schema()["tables"]:
+        cols = " ".join(t["columns"]).lower()
+        if all(n in cols for n in needles):
+            return t["table"]
+    raise AssertionError(f"no family view with columns {needles}")
 
 
 # ===========================================================================
@@ -32,16 +43,17 @@ def test_corpus_ingest_appends_idempotently_and_grows(tmp_path):
     r1 = store.ingest_pdf(str(wk1))
     assert r1["status"] == "success" and r1["tables"] >= 1
     assert store.list_schema()["documents"]["count"] == 1
+    view = _view_with(store, "vega", "region")  # the region table's family view
 
-    n = store.run_select("SELECT COUNT(*) FROM t00 WHERE report_date='2026-05-01'")["rows"][0][0]
+    n = store.run_select(f'SELECT COUNT(*) FROM "{view}" WHERE report_date=\'2026-05-01\'')["rows"][0][0]
     store.ingest_pdf(str(wk1))  # same file/date -> replace
     assert store.run_select(
-        "SELECT COUNT(*) FROM t00 WHERE report_date='2026-05-01'")["rows"][0][0] == n
+        f'SELECT COUNT(*) FROM "{view}" WHERE report_date=\'2026-05-01\'')["rows"][0][0] == n
 
-    store.ingest_pdf(str(wk2))  # new week -> grows
+    store.ingest_pdf(str(wk2))  # new week -> grows (same shape -> same family view)
     assert store.list_schema()["documents"]["count"] == 2
     assert store.run_select(
-        "SELECT COUNT(DISTINCT report_date) FROM t00")["rows"][0][0] == 2
+        f'SELECT COUNT(DISTINCT report_date) FROM "{view}"')["rows"][0][0] == 2
 
 
 def test_corpus_ingest_derives_report_date_from_filename(tmp_path):
@@ -67,7 +79,8 @@ def test_corpus_ingest_helper_edges(tmp_path, monkeypatch):
     out = store.ingest_pdf("ignored.pdf", report_date="2026-05-01")
     assert out["status"] == "success"
     # the 'Total' row is flagged so callers can exclude it
-    totals = store.run_select("SELECT COUNT(*) FROM t00 WHERE is_total")["rows"][0][0]
+    view = store.list_schema()["tables"][0]["table"]  # the one crafted table's view
+    totals = store.run_select(f'SELECT COUNT(*) FROM "{view}" WHERE is_total')["rows"][0][0]
     assert totals == 1
 
 

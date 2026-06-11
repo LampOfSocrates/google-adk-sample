@@ -13,7 +13,7 @@ from google.adk.agents.invocation_context import InvocationContext
 from google.adk.events import Event, EventActions
 from google.genai import types
 
-_DEFAULT_PDF = os.path.join("tests", "fixtures", "risk_report.pdf")
+_DEFAULT_PDF = os.path.join("tests", "pdf_insight", "fixtures", "risk_report.pdf")
 
 
 def _user_text(ctx: InvocationContext) -> str:
