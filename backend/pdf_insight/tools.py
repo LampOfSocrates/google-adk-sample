@@ -15,10 +15,12 @@ from .config import MODES
 
 
 def extract_tables(tool_context: ToolContext) -> dict:
-    """Extract ALL tables from the active PDF and return them as text.
+    """Extract ALL tables from the active PDF (any kind of document) and return
+    them as text.
 
     Reads the PDF path from session state (`pdf_path`). Used by the auto router
-    for the all-tables-as-text strategy.
+    for the all-tables-as-text strategy. Domain-agnostic: it returns whatever
+    tables the document holds; the caller reads the headers to interpret them.
 
     Returns:
         {"status": "success", "count": N, "text": "..."} or an error dict.

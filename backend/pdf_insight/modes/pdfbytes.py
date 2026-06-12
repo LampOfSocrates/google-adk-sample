@@ -126,10 +126,13 @@ def _make_answerer(name: str) -> LlmAgent:
         model=get_model(),
         description="Answers a question by reading the raw PDF natively (no extraction).",
         instruction=(
-            "The full PDF document is attached to this turn. Read it directly — "
-            "including tables, figures, and layout — and answer the user's question "
-            "from its contents. If no document is attached or the answer isn't in "
-            "it, say so plainly."
+            "The full PDF document is attached to this turn. It may be ANY kind of "
+            "document — a report, statement, invoice, contract, form, slide deck, or "
+            "research paper — so don't assume a domain; read what's actually there. "
+            "Read it directly, including prose, tables, figures, and layout, and answer "
+            "the user's question from its contents. When you add up numbers from a table, "
+            "skip any subtotal/'Total' row and keep the stated units. If no document is "
+            "attached or the answer isn't in it, say so plainly."
         ),
         before_model_callback=_attach_pdf,
     )

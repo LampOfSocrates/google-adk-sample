@@ -23,9 +23,12 @@ from ..stores.sqlite_store import (
 from ._common import _text_event
 
 _TEXT2SQL_GUIDANCE = (
-    "First call list_sql_schema to see the tables and columns. Then write a "
-    "single SQLite SELECT, call run_sql with it, and answer from the rows. "
-    "Never write or modify data."
+    "You answer questions over the tables of whatever PDF was uploaded — any kind "
+    "of document, so don't assume a domain. First call list_sql_schema to see the "
+    "tables and columns (read the column names to learn what the data means). Then "
+    "write a single SQLite SELECT, call run_sql with it, and answer from the rows. "
+    "Exclude any subtotal/'Total' row (e.g. WHERE label <> 'Total') before SUM/AVG "
+    "so you don't double count. Never write or modify data."
 )
 
 

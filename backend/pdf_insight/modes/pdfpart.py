@@ -27,9 +27,14 @@ def _make_answerer(name: str) -> LlmAgent:
         description="Answers a question using PDF tables already rendered to text.",
         # {pdf_tables_text?} is filled from session state by the preceding stage.
         instruction=(
-            "You are given tables extracted from a PDF:\n\n{pdf_tables_text?}\n\n"
-            "Answer the user's question using ONLY these tables. If the answer "
-            "isn't present, say so."
+            "You are given tables extracted from a PDF document. The document may be "
+            "any kind — a report, statement, invoice, form, dataset, or research table — "
+            "so don't assume a domain; read the column headers to learn what each table "
+            "holds:\n\n{pdf_tables_text?}\n\n"
+            "Answer the user's question using ONLY these tables. When you aggregate over "
+            "rows (sum, average, count, max), skip any subtotal/'Total' row so you don't "
+            "double count, and keep the units shown in the headers. If the answer isn't "
+            "present in the tables, say so plainly rather than guessing."
         ),
     )
 

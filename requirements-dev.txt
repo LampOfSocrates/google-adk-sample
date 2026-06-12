@@ -6,3 +6,5 @@ aiosqlite         # async SQLite driver for examples/durable_adk_chat_service.py
 reportlab          # scripts/pdf_insight/pdf_creator.py — generates synthetic test PDFs
 streamlit
 streamlit-mermaid
+playwright          # tests/pdf_insight/e2e — drives the Streamlit UI in a real browser
+pytest-playwright   # provides the `page` fixture; run `playwright install chromium` once

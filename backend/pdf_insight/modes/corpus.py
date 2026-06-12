@@ -24,7 +24,8 @@ from ..stores import SqlStore, get_corpus_store, list_corpus_schema, run_corpus_
 # is_total, the union views) are about the data model, the same on any SQL engine.
 _CORPUS_GUIDANCE = (
     "You answer questions over a SQL database of tables extracted from many PDF "
-    "reports — possibly different KINDS of report.\n"
+    "documents — possibly different KINDS of document (reports, statements, forms). "
+    "Don't assume a domain; read each view's columns to learn what it holds.\n"
     "1) Call list_corpus_schema FIRST — it returns the queryable tables (each a view "
     "with a `table` name, title and columns) and the report_date range covered.\n"
     "2) Write ONE read-only SELECT (a WITH/CTE is fine) against a table name from the "

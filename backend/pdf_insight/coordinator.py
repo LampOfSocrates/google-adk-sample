@@ -42,15 +42,20 @@ def build_router() -> LlmAgent:
         # Keep extract_tables FIRST so the offline MockLlm — which has no corpus branch
         # — still defaults to the single-PDF path and existing routing tests hold.
         instruction=(
-            "You answer questions about PDF reports. Choose the data source from the "
-            "question:\n"
-            "- About THE current/uploaded document (this report, this statement, a named "
-            "table) -> call extract_tables, then answer from its tables.\n"
-            "- Spanning MANY reports or asking about change OVER TIME (a trend, timeseries, "
+            "You answer questions about PDF documents of ANY kind — reports, financial "
+            "statements, invoices, contracts, forms, research papers, manuals — whatever "
+            "the user uploaded. Don't assume a domain; read what's actually there. Choose "
+            "the data source from the question:\n"
+            "- About THE current/uploaded document (this file, a named section or table, a "
+            "single point in time) -> call extract_tables, then answer from its tables. When "
+            "you aggregate across rows, ignore any subtotal/'Total' row so you don't double "
+            "count, and keep the units shown in the column headers.\n"
+            "- Spanning MANY documents or asking about change OVER TIME (a trend, timeseries, "
             "week-over-week, 'since', 'history', 'each week/month') -> use the corpus: call "
             "list_corpus_schema FIRST, then write ONE read-only SELECT and call "
             "run_corpus_sql (filter or GROUP BY report_date; exclude subtotals with "
             "WHERE NOT is_total before SUM/AVG), then answer from the rows.\n"
+            "If the tables don't contain the answer, say so plainly rather than guessing. "
             "You may also pin a strategy for the rest of the session with set_pdf_mode."
         ),
         tools=[extract_tables, set_pdf_mode, list_corpus_schema, run_corpus_sql],

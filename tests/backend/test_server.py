@@ -93,3 +93,24 @@ def test_conversations_crud(client):
 
     assert client.delete(f"/conversations/{cid}").json()["ok"] is True
     assert all(c["id"] != cid for c in client.get("/conversations").json()["conversations"])
+
+
+def test_conversations_save_with_debug_snapshot_dicts(client):
+    """Regression: the client round-trips already-serialized snapshot *dicts*, so
+    save must not call dataclasses.asdict on them (that 500'd and the client saw a
+    non-JSON body)."""
+    debug_turns = [{
+        "prompt": "hi", "latency": 0.4, "session": {"state": {}},
+        "snapshots": [{
+            "seq": 0, "author": "pdf_router", "timestamp": 1.0, "is_final": True,
+            "partial": False, "invocation_id": "i1",
+            "parts": [{"kind": "text", "tool_name": None, "tool_args": None,
+                       "tool_result": None, "text": "hello"}],
+            "usage": {"total": 5}, "raw": {"x": 1},
+        }],
+    }]
+    body = {"app": "pdf_insight", "backend": "mock",
+            "messages": [{"role": "user", "content": "hi"}], "debug_turns": debug_turns}
+    cid = client.post("/conversations", json=body).json()["id"]      # must not 500
+    got = client.get(f"/conversations/{cid}").json()                 # and round-trips
+    assert got["debug_turns"][0]["snapshots"][0]["author"] == "pdf_router"

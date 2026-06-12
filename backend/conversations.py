@@ -68,10 +68,13 @@ def _read_json(path: str):
 
 # --- debug snapshots <-> json --------------------------------------------
 def serialize_debug_turns(turns: list[dict]) -> list[dict]:
-    """EventSnapshot dataclasses -> plain dicts for JSON."""
+    """Snapshots -> plain dicts for JSON. Over the API the client already sends
+    snapshot *dicts* (it never held the dataclass), so pass those through; only an
+    in-process EventSnapshot instance needs `asdict`."""
     out = []
     for t in turns or []:
-        snaps = [dataclasses.asdict(s) for s in t.get("snapshots", [])]
+        snaps = [s if isinstance(s, dict) else dataclasses.asdict(s)
+                 for s in t.get("snapshots", [])]
         out.append({**t, "snapshots": snaps})
     return out
 
