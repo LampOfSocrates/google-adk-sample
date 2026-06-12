@@ -1,8 +1,8 @@
 """Tables-as-text modes: LLM_GETS_ALL_TABLES_AS_TEXT / LLM_GETS_SOME_TABLES_AS_TEXT.
 
-Deterministic extract -> publish to state -> delegate to an answering LlmAgent
-whose instruction pulls the text back in via `{pdf_tables_text}` templating.
-Both modes share one custom BaseAgent; `select` is what distinguishes them.
+Extract -> publish to state -> delegate to an answering LlmAgent that pulls the
+text back via `{pdf_tables_text}` templating. Both modes share one BaseAgent;
+`select` distinguishes them.
 """
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ def _make_answerer(name: str) -> LlmAgent:
         name=name,
         model=get_model(),
         description="Answers a question using PDF tables already rendered to text.",
-        # {pdf_tables_text?} is filled from session state by the preceding stage.
+        # {pdf_tables_text?} is filled from state by the preceding stage.
         instruction=(
             "You are given tables extracted from a PDF document. The document may be "
             "any kind — a report, statement, invoice, form, dataset, or research table — "
@@ -40,11 +40,10 @@ def _make_answerer(name: str) -> LlmAgent:
 
 
 class PdfPartTextAgent(BaseAgent):
-    """Deterministic extract -> publish to state -> delegate to an answering LLM.
+    """Extract -> publish to state -> delegate to an answering LLM.
 
-    `select=None` extracts all tables (LLM_GETS_ALL_TABLES_AS_TEXT); a list of
-    indices extracts just those (LLM_GETS_SOME_TABLES_AS_TEXT). For the 'some'
-    case the indices can also be overridden per request (e.g. 'table 2').
+    `select=None` extracts all tables (the 'all' mode); a list of indices extracts
+    just those (the 'some' mode), and those can be overridden per request ('table 2').
     """
 
     select: Optional[list[int]] = None
@@ -59,7 +58,7 @@ class PdfPartTextAgent(BaseAgent):
     ) -> AsyncGenerator[Event, None]:
         path = ctx.session.state.get("pdf_path")
         select = self.select
-        if select is not None:  # allow a per-request index override
+        if select is not None:  # per-request index override
             override = _parse_table_indices(_user_text(ctx))
             if override is not None:
                 select = override
@@ -69,8 +68,7 @@ class PdfPartTextAgent(BaseAgent):
             yield _text_event(self.name, f"Could not read tables from {path}: {e}")
             return
         text = pdf.tables_as_text(tables)
-        # Mutate in-process (so the answerer's {pdf_tables_text} templating sees it
-        # this turn) AND emit a state_delta so it persists in the session snapshot.
+        # Mutate in-process so the templating sees it this turn; state_delta persists it.
         ctx.session.state["pdf_tables_text"] = text
         yield Event(author=self.name,
                     actions=EventActions(state_delta={"pdf_tables_text": text}))
@@ -79,7 +77,7 @@ class PdfPartTextAgent(BaseAgent):
 
 
 def build() -> dict:
-    """Return {mode_constant: agent} for the two tables-as-text strategies."""
+    """Return {mode_constant: agent} for the two tables-as-text modes."""
     return {
         config.ALL_TABLES_AS_TEXT: PdfPartTextAgent(
             "pdfpart_all", _make_answerer("pdfpart_all_agent")),

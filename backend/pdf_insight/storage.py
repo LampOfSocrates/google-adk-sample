@@ -1,20 +1,13 @@
-"""Where the pdf_insight SQL backends read and write — one place, one rule.
+"""Where the SQL backends read and write — one place, one rule.
 
-Both answering modes that use SQL — the per-document SQLite mode
-(`LLM_MAKES_SQL_FROM_CHAT`) and the whole-corpus DuckDB mode (`LLM_QUERIES_CORPUS`)
-— resolve their storage location HERE, through the SAME precedence so the knobs
-are predictable and documented in a single spot:
+Both SQL modes (SQLite per-doc, DuckDB corpus) resolve their storage here through
+the same precedence:
 
-    session-state override  >  environment variable  >  persistent default
+    session-state override  >  env var  >  persistent default
 
-Think "data source" (a DSN), not "file path". Today the embedded engines resolve
-to a file under data/; the identical three-tier resolution returns a real
-connection URL the day a backend is a server (Postgres). Adding that backend is
-then ONE resolver here, not a change scattered through the mode agents — see the
-`postgres_dsn` sketch at the bottom.
-
-Everything defaults under PDF_DATA_DIR (./data) so all databases live together
-and the whole lot relocates with a single env var.
+These are DSNs, not file paths: today they're files under data/, but the same
+resolution returns a connection URL once a backend is a server (see postgres_dsn).
+Everything defaults under PDF_DATA_DIR (./data) so it all relocates with one env var.
 """
 from __future__ import annotations
 
@@ -34,11 +27,9 @@ def _resolve(state, state_key: str, env_key: str, default: str) -> str:
 def sqlite_dsn(pdf_path: str, state: dict | None = None) -> str:
     """Per-document SQLite database — one file per source PDF.
 
-    SQLite is the single-document backend, so the *configurable* part is the
-    directory; the filename is derived from the PDF so a mid-session document
-    switch can never answer from the previous doc's database. Persistent (under
-    data/sqlite by default, NOT the OS temp dir) so re-runs reuse the ingest,
-    exactly like the DuckDB corpus.
+    Only the directory is configurable; the filename is derived from the PDF so a
+    mid-session doc switch can't answer from the previous doc's db. Persistent (not
+    the OS temp dir) so re-runs reuse the ingest.
 
         state['sqlite_dir']  >  PDF_SQLITE_DIR  >  <data_dir>/sqlite
     """
@@ -48,7 +39,7 @@ def sqlite_dsn(pdf_path: str, state: dict | None = None) -> str:
 
 
 def duckdb_dsn(state: dict | None = None) -> str:
-    """The single whole-corpus DuckDB database — one corpus across all reports.
+    """The whole-corpus DuckDB database — one corpus across all reports.
 
         state['corpus_db']  >  PDF_CORPUS_DB  >  <data_dir>/pdf_corpus.duckdb
     """
@@ -57,8 +48,7 @@ def duckdb_dsn(state: dict | None = None) -> str:
 
 
 def postgres_dsn(state: dict | None = None) -> str:
-    """The corpus served by Postgres — same shape as duckdb_dsn, but a connection
-    URL instead of a file path.
+    """Corpus served by Postgres — like duckdb_dsn but a connection URL, not a file.
 
         state['pg_dsn']  >  PDF_PG_DSN  >  postgresql://localhost:5432/pdf_insight
     """

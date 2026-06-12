@@ -1,13 +1,11 @@
 """Postgres backend — skeleton, not yet wired to a mode.
 
-Present so the abstraction is real rather than aspirational: a server engine
-differs from the embedded ones in exactly two places — how you open a read-only
-handle, and how you describe the schema. Everything else (the trust-boundary
-guard, `run_select`, the result shape) is inherited from `SqlStore` unchanged.
+Proves the abstraction is real: a server engine differs in just two places —
+opening a read-only handle and describing the schema. Everything else (the
+guard, `run_select`, result shape) is inherited from `SqlStore`.
 
-To make it live: add `psycopg` to requirements, implement the two methods below,
-resolve the DSN via a `storage.postgres_dsn(state)` (mirroring `duckdb_dsn`), and
-register a mode that binds list/run tools just like the SQLite and DuckDB modes.
+To make it live: add `psycopg`, implement the two methods below, add a
+`storage.postgres_dsn(state)`, and register a mode like the SQLite/DuckDB ones.
 """
 from __future__ import annotations
 
@@ -26,26 +24,24 @@ class PostgresStore(SqlStore):
         self.dsn = dsn
 
     def _connect_readonly(self):
-        # Real impl: a psycopg connection, then enforce read-only at the engine —
-        #   con = psycopg.connect(self.dsn)
-        #   con.execute("SET TRANSACTION READ ONLY")   # or connect as a read-only role
-        #   return con
+        # Real impl: psycopg.connect(self.dsn), then SET TRANSACTION READ ONLY
+        # (or connect as a read-only role).
         raise NotImplementedError(
             "PostgresStore is a placeholder: add psycopg and implement "
             "_connect_readonly (open the DSN, SET TRANSACTION READ ONLY).")
 
     def list_schema(self) -> dict:
-        # Real impl: query information_schema.columns for the ingested tNN tables,
-        # shaped like DuckDBStore.list_schema (a single corpus target).
+        # Real impl: query information_schema.columns, shaped like
+        # DuckDBStore.list_schema.
         raise NotImplementedError(
             "PostgresStore is a placeholder: implement list_schema via "
             "information_schema when psycopg is added.")
 
     def ingest_pdf(self, pdf_path: str, report_date: str | None = None,
                    strategy: str = "lines", title_for=None) -> dict:
-        # Real impl: COPY/INSERT the extracted tables into the same canonical
-        # schema DuckDBStore.ingest_pdf builds (documents + doc_tables + families +
-        # per-doc physical tables + union views).
+        # Real impl: COPY/INSERT into the same canonical schema
+        # DuckDBStore.ingest_pdf builds (documents + doc_tables + families +
+        # per-doc tables + union views).
         raise NotImplementedError(
             "PostgresStore is a placeholder: implement ingest_pdf when psycopg "
             "is added (write the canonical documents/doc_tables/families schema).")

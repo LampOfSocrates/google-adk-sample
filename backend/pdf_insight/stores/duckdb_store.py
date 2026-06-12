@@ -1,25 +1,18 @@
 """DuckDB backend — the whole-corpus store for LLM_QUERIES_CORPUS.
 
-Holds MANY, possibly DIFFERENT-KIND PDFs without collision. The old design merged
-by POSITION — every PDF's table 0 went into a shared `t00` — which silently
-corrupted the corpus the moment two documents had different shapes. Now:
+Holds many, possibly different-kind PDFs without collision. The old design merged
+by position (every PDF's table 0 into a shared `t00`), which corrupted the corpus
+once two docs had different shapes. Now:
 
-  * each uploaded document gets its OWN physical tables  (d<slug>_t<idx>)
-  * a `families` view unions every document's table that shares the same
-    (position, column-shape), so "across all reports" queries still work
-  * registries map it all:
-      documents   — one row per uploaded PDF (doc_id = filename, report_date, ...)
-      doc_tables  — each doc's tables: (doc_id, table_index) -> physical table + family
-      families    — one row per distinct (index, columns+types): the union VIEW,
-                    its title and columns
+  * each document gets its own physical tables (d<slug>_t<idx>)
+  * a family view unions every doc's table sharing the same (position, shape),
+    so "across all reports" queries still work
+  * registries: documents (one per PDF), doc_tables (doc's tables -> phys + family),
+    families (one per distinct shape -> the union view)
 
-So same-kind reports still accumulate (now through their family view, e.g. the
-weekly risk report's 16 families == the old t00..t15), while a different KIND of
-PDF forms its own families and never lands in another doc's table.
-
-Queries open the DB `read_only`; `ingest_pdf` opens it read-write to add/replace
-ONE document (idempotent per doc_id). The same path runs at upload time and from
-the offline CLI (scripts/pdf_insight/pdf_to_duckdb.py).
+Same-kind reports accumulate through their family view; a different kind of PDF
+forms its own families. Queries open `read_only`; `ingest_pdf` opens read-write
+to add/replace one document. Same path at upload and from the offline CLI.
 """
 from __future__ import annotations
 
@@ -35,24 +28,24 @@ from backend.shared import pdf_extractor as pdf
 
 from .base import SqlStore, jsonable
 
-# Back-compat alias: tests refer to this module's coercion helper as `_jsonable`.
+# Back-compat alias: tests refer to the coercion helper as `_jsonable`.
 _jsonable = jsonable
 
 _DATE_RE = re.compile(r"(\d{4}-\d{2}-\d{2})")
 
 
-# --- pure ingestion helpers (shared by runtime + the offline CLI) --------------
+# --- pure ingestion helpers (shared by runtime + offline CLI) ------------------
 def _report_date(filename: str) -> str | None:
     m = _DATE_RE.search(filename)
     return m.group(1) if m else None
 
 
 def _sql_ident(name: str, fallback: str) -> str:
-    """Header cell -> safe, lower-snake DuckDB identifier. 'Vega($k)' -> 'vega_k'.
+    """Header cell -> safe lower-snake DuckDB identifier. 'Vega($k)' -> 'vega_k'.
 
-    Deliberately stricter than sqlite_store._sql_ident (which preserves case and
-    replaces `\\W` 1:1): the corpus is queried by hand across weeks, so columns
-    must be lower_snake and identical report to report."""
+    Stricter than sqlite_store._sql_ident on purpose: the corpus is queried by
+    hand across weeks, so columns must be lower_snake and stable report to report.
+    """
     ident = re.sub(r"\W+", "_", name).strip("_").lower()
     if not ident or ident[0].isdigit():
         ident = f"c_{ident}" if ident else fallback
@@ -85,7 +78,7 @@ def _columns_for(table: dict) -> list[str]:
 
 
 def _numeric_mask(table: dict, ncols: int) -> list[bool]:
-    """A column is numeric iff every non-empty data cell parses as a number.
+    """A column is numeric iff every non-empty cell parses as a number.
     Column 0 (the row label) is always text."""
     numeric = [True] * ncols
     numeric[0] = False
@@ -105,9 +98,9 @@ def _doc_slug(doc_id: str) -> str:
 def _family_id(table_index: int, cols: list[str], types: list[str]) -> str:
     """Stable id for a (position, column-shape) family.
 
-    Two documents' tables share a family — and thus a UNION view — iff they sit at
-    the same table index AND have identical column names+types (so the union is
-    valid and the rows mean the same thing). Different KINDS of table never merge."""
+    Two tables share a family (and a union view) iff same index AND identical
+    column names+types — so the union is valid. Different shapes never merge.
+    """
     shape = json.dumps([table_index, list(zip(cols, types))], sort_keys=True)
     return f"{table_index:02d}_{hashlib.sha1(shape.encode()).hexdigest()[:8]}"
 
@@ -131,16 +124,16 @@ def _ensure_registries(con) -> None:
 
 
 def _drop_all_views(con) -> None:
-    """Drop every family view so the physical tables underneath can be replaced
-    (DuckDB forbids dropping a table a view still depends on). Rebuilt at the end."""
+    """Drop every family view so the tables underneath can be replaced — DuckDB
+    forbids dropping a table a view depends on. Rebuilt at the end."""
     for (view,) in con.execute("SELECT view_name FROM families").fetchall():
         con.execute(f'DROP VIEW IF EXISTS "{view}"')
 
 
 def _ingest_table(con, table: dict, report_date: str, source_file: str,
                   doc_id: str, slug: str, title_for) -> int:
-    """Create this document's own physical table for one extracted table, insert
-    its rows, and register it under its (index, shape) family."""
+    """Create this doc's physical table for one extracted table, insert its rows,
+    and register it under its (index, shape) family."""
     idx = table["index"]
     cols = _columns_for(table)
     ncols = len(cols)
@@ -177,8 +170,8 @@ def _ingest_table(con, table: dict, report_date: str, source_file: str,
 
 
 def _rebuild_views(con) -> None:
-    """(Re)create one UNION ALL view per family over its member physical tables.
-    Families that lost all their members (a document was replaced) are removed."""
+    """(Re)create one UNION ALL view per family over its member tables.
+    Families that lost all members (a doc was replaced) are removed."""
     for fam_id, view, cols_json in con.execute(
         "SELECT family_id, view_name, columns FROM families"
     ).fetchall():
@@ -198,10 +191,10 @@ def _rebuild_views(con) -> None:
 
 
 class DuckDBStore(SqlStore):
-    """The single whole-corpus DuckDB database (many documents, no collision).
+    """The whole-corpus DuckDB database (many docs, no collision).
 
-    Inherits the empty `dialect_hint` from SqlStore: corpus columns are typed
-    DOUBLE/DATE, so queries are ANSI-clean and need no dialect guidance.
+    Inherits the empty `dialect_hint`: corpus columns are typed DOUBLE/DATE, so
+    queries are ANSI-clean.
     """
 
     def __init__(self, db_path: str):
@@ -217,13 +210,12 @@ class DuckDBStore(SqlStore):
 
     def ingest_pdf(self, pdf_path: str, report_date: str | None = None,
                    strategy: str = "lines", title_for=None) -> dict:
-        """Add (or replace) ONE PDF in the corpus as its own set of tables.
+        """Add (or replace) one PDF in the corpus as its own set of tables.
 
-        `report_date` defaults to a date parsed from the filename, else today.
-        `title_for(index) -> str` supplies table titles (the CLI passes goldens);
-        runtime uploads omit it and get 'Table N'. Idempotent per document
-        (doc_id = filename): re-ingesting the same name replaces that document's
-        tables, never another's.
+        `report_date` defaults from the filename, else today. `title_for(index)`
+        supplies titles (CLI passes goldens; uploads omit it and get 'Table N').
+        Idempotent per doc_id (filename): re-ingesting a name replaces only that
+        document's tables.
         """
         filename = os.path.basename(pdf_path)
         doc_id = filename
@@ -236,8 +228,8 @@ class DuckDBStore(SqlStore):
         con = duckdb.connect(self.db_path)  # read-write
         try:
             _ensure_registries(con)
-            _drop_all_views(con)  # free the physical tables for replacement
-            # Replace any prior ingest of THIS document (and only this one).
+            _drop_all_views(con)  # free the tables for replacement
+            # Replace any prior ingest of this document only.
             for (phys,) in con.execute(
                 "SELECT phys_table FROM doc_tables WHERE doc_id = ?", [doc_id]
             ).fetchall():
@@ -260,9 +252,9 @@ class DuckDBStore(SqlStore):
                 "tables": len(tables), "rows": n_rows}
 
     def list_schema(self) -> dict:
-        """List what's queryable: the family views (each a union across the docs
-        that share its shape) + report coverage. The corpus agent calls this FIRST,
-        then queries a view by its `table` name."""
+        """List what's queryable: the family views (a union across docs sharing a
+        shape) + report coverage. Corpus agent calls this first, then queries a
+        view by its `table` name."""
         unavailable = self.available()
         if unavailable:
             return {"status": "error", "error_message": unavailable}
@@ -298,5 +290,5 @@ class DuckDBStore(SqlStore):
             "tables": tables,
         }
 
-# The corpus function tools live in corpus_tools.py now — backend-neutral, so they
+# Corpus function tools live in corpus_tools.py now — backend-neutral, so they
 # pick DuckDB or Postgres by config instead of hardcoding this engine.

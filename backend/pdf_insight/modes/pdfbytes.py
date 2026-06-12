@@ -1,25 +1,17 @@
 """Native bytes mode: LLM_GETS_PDF_BYTES.
 
-Hands the raw PDF to the model and lets it read the document itself — no table
-extraction, no SQL. Works on any backend whose model accepts a document part:
+Hands the raw PDF to the model — no extraction, no SQL. A before_model_callback
+injects the PDF onto the outgoing request so we reuse the normal LlmAgent path
+(streaming, event shaping, UI). Per backend:
 
-  * gemini  — native PDF understanding (inline document part).
-  * bedrock — Anthropic reads it as a document; ADK's LiteLlm maps an inline
-    `application/pdf` part to its data-URI document content.
-  * openai / azure — these require the file be uploaded to the Files API first
-    and referenced by id. ADK *would* upload our inline bytes, but it does so
-    without a filename, so OpenAI can't detect the PDF MIME and rejects it. We
-    upload it ourselves with a real filename and attach the returned `file-…` id,
-    which ADK passes straight through.
-  * deepseek — has no document input, so the provider rejects it; the error is
-    surfaced in the chat (not a crash). Use a tables/SQL mode there instead.
-  * mock — ignores the bytes and returns its offline placeholder, so the graph
-    still runs without a key.
-
-Rather than re-extract anything, an `LlmAgent` carries the question and an async
-`before_model_callback` injects the PDF onto the outgoing request. Going through a
-normal LlmAgent (not a hand-rolled model call) means ADK's streaming, event
-shaping, and the UI rendering are all reused unchanged.
+  * gemini  — native inline document part.
+  * bedrock — Anthropic reads it via ADK's LiteLlm data-URI document content.
+  * openai / azure — need a Files-API upload referenced by id. ADK would upload
+    our inline bytes but drops the filename, so OpenAI can't detect the PDF MIME
+    and rejects it; we upload it ourselves with a real filename instead.
+  * deepseek — no document input, so it rejects; error surfaces in chat. Use a
+    tables/SQL mode there.
+  * mock — ignores the bytes, returns its offline placeholder.
 """
 from __future__ import annotations
 
@@ -34,15 +26,15 @@ from google.genai import types
 
 from .. import config
 
-# Providers whose chat API can't take an inline PDF — the file must be uploaded
-# and referenced by id (mirrors ADK lite_llm._FILE_ID_REQUIRED_PROVIDERS). For
-# these we upload with a filename ourselves so the MIME is detectable.
+# Providers whose chat API needs a Files-API upload, not inline bytes (mirrors
+# ADK lite_llm._FILE_ID_REQUIRED_PROVIDERS). We upload with a filename so the
+# MIME is detectable.
 _FILE_ID_BACKENDS = {"openai", "azure"}
 
 
 def _append_part(llm_request: LlmRequest, part: types.Part) -> None:
     """Append `part` to the final user turn (so it travels with the question),
-    or start a fresh user content when the request has none."""
+    or start a fresh user turn if there's none."""
     contents = llm_request.contents
     if contents and contents[-1].role == "user":
         contents[-1].parts.append(part)
@@ -51,11 +43,9 @@ def _append_part(llm_request: LlmRequest, part: types.Part) -> None:
 
 
 def _inject_pdf(llm_request: LlmRequest, path: str | None) -> bool:
-    """Attach the PDF at `path` as an inline `application/pdf` document part.
-
-    Used by every backend except the file-id ones. Returns True when a part was
-    added, False when there's no readable file — in which case the answerer's
-    instruction makes it say the document is missing.
+    """Attach the PDF as an inline `application/pdf` part (every backend but the
+    file-id ones). Returns False if there's no readable file — the answerer's
+    instruction then says the document is missing.
     """
     if not path or not os.path.exists(path):
         return False
@@ -70,16 +60,15 @@ def _inject_pdf(llm_request: LlmRequest, path: str | None) -> bool:
 
 
 async def _inject_uploaded_pdf(llm_request: LlmRequest, path: str | None) -> bool:
-    """Upload the PDF to the provider's Files API and attach its id.
+    """Upload the PDF to the Files API and attach its id (openai/azure).
 
-    For openai/azure, whose chat API needs a file id rather than inline bytes.
-    We upload with a real filename so the provider detects the PDF MIME (ADK's
-    own inline upload omits the name and the upload is rejected), then attach a
-    `file_data` part holding the `file-…` id, which ADK forwards as-is.
+    Upload with a real filename so the provider detects the PDF MIME — ADK's own
+    inline upload omits the name and gets rejected. Attaches a `file_data` part
+    with the `file-…` id, which ADK forwards as-is.
     """
     if not path or not os.path.exists(path):
         return False
-    import litellm  # available whenever a LiteLLM backend is active
+    import litellm  # present whenever a LiteLLM backend is active
 
     with open(path, "rb") as fh:
         data = fh.read()
@@ -89,9 +78,8 @@ async def _inject_uploaded_pdf(llm_request: LlmRequest, path: str | None) -> boo
         purpose="user_data",
         custom_llm_provider=backend(),
     )
-    # Thread the key explicitly so the repo's OPENAI_KEY alias works for the
-    # upload too — litellm.acreate_file otherwise only reads OPENAI_API_KEY,
-    # unlike the chat client which shared.model gives the alias to.
+    # Pass the key explicitly so the repo's OPENAI_KEY alias works here too —
+    # litellm.acreate_file only reads OPENAI_API_KEY otherwise.
     api_key = os.environ.get("OPENAI_API_KEY") or os.environ.get("OPENAI_KEY")
     if api_key:
         upload_kwargs["api_key"] = api_key
@@ -107,9 +95,8 @@ async def _inject_uploaded_pdf(llm_request: LlmRequest, path: str | None) -> boo
 async def _attach_pdf(callback_context: CallbackContext, llm_request: LlmRequest):
     """before_model_callback: inject the active PDF before each model call.
 
-    Reads the path the coordinator pinned in session state and routes to the
-    inline or upload path by backend. Returns None so the model call proceeds
-    with the (now PDF-bearing) request.
+    Reads the path the coordinator pinned in state, routes inline vs upload by
+    backend. Returns None so the model call proceeds.
     """
     path = callback_context.state.get("pdf_path")
     if backend() in _FILE_ID_BACKENDS:
@@ -139,5 +126,5 @@ def _make_answerer(name: str) -> LlmAgent:
 
 
 def build() -> dict:
-    """Return {mode_constant: agent} for the native-bytes strategy."""
+    """Return {mode_constant: agent} for the native-bytes mode."""
     return {config.PDF_BYTES: _make_answerer("pdfbytes")}

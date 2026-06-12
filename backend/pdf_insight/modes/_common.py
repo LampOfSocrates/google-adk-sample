@@ -1,7 +1,7 @@
 """Helpers shared by the coordinator and the per-mode agents.
 
-Pulled out of agent.py so each mode module (pdfpart/text2sql/pdfbytes/corpus) and the
-coordinator can reuse them without importing each other.
+Live here (not agent.py) so the modes and coordinator can share them without
+importing each other.
 """
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ def _user_text(ctx: InvocationContext) -> str:
 
 
 def _resolve_pdf_path(text: str, state: dict) -> str:
-    """Precedence: a .pdf path in the message > state['pdf_path'] > env > default."""
+    """Precedence: .pdf path in message > state['pdf_path'] > env > default."""
     m = re.search(r"(\S+\.pdf)\b", text or "", re.IGNORECASE)
     if m:
         return m.group(1)
@@ -34,7 +34,7 @@ def _resolve_pdf_path(text: str, state: dict) -> str:
 
 
 def _parse_table_indices(text: str) -> Optional[list[int]]:
-    """Pull explicit table indices ('table 0', 'tables 0,2') out of the message."""
+    """Pull table indices ('table 0', 'tables 0,2') from the message."""
     m = re.search(r"tables?\s+([\d,\s]+)", text or "", re.IGNORECASE)
     if not m:
         return None

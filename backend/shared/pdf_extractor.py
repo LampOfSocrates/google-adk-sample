@@ -1,14 +1,8 @@
-"""Pure, deterministic PDF helpers built on pdfplumber. No ADK, no LLM, no network.
+"""Pure PDF helpers on pdfplumber. No ADK, no LLM, no network — plain functions.
 
-ADK idiom note: everything in this module is a plain function, NOT an agent.
-Table detection is fully deterministic, so it belongs in the *tool* layer that an
-agent calls — never wrap deterministic work in an LlmAgent (it only adds cost and
-nondeterminism). The agents in apps/pdf_insight import these and expose them as
-function tools.
-
-`extract_tables` flattens every detected table across all pages into one list and
-gives each a stable global `index`, so callers (and the LLM) can refer to "table 0,
-table 2" regardless of which page they sit on.
+Table detection is deterministic, so it lives here in the tool layer, not an LlmAgent.
+`extract_tables` flattens all pages into one list with a stable global `index`, so
+callers can refer to "table 0, table 2" regardless of page.
 """
 from __future__ import annotations
 
@@ -20,19 +14,17 @@ def _clean(cell) -> str:
 
 
 def _sanitize_header(raw_header, ncols) -> list[str]:
-    """Turn a detected header row into safe, unique column names.
+    """Turn a messy detected header row into safe, unique column names.
 
-    pdfplumber headers are messy (blanks, duplicates, merged cells). We fall back
-    to col_N for empties and de-duplicate by suffixing, so downstream code (incl.
-    SQLite column names) always gets a clean, collision-free list.
+    pdfplumber headers have blanks/dupes/merged cells. Empties become col_N and
+    dupes get suffixed, so downstream (incl. SQLite columns) gets a clean list.
     """
     names, seen = [], {}
     for i in range(ncols):
         base = _clean(raw_header[i]) if raw_header and i < len(raw_header) else ""
         if not base:
             base = f"col_{i}"
-        # collapse to identifier-ish: keep it readable but predictable
-        base = base.replace(" ", "_")
+        base = base.replace(" ", "_")  # identifier-ish but still readable
         name = base
         while name in seen:
             seen[base] += 1
@@ -47,13 +39,12 @@ def extract_tables(path: str, select=None, strategy: str = "lines") -> list[dict
 
     Args:
         path: PDF file path.
-        select: optional list of global table indices to keep (others dropped).
-            None -> keep every detected table.
+        select: global table indices to keep; None keeps all.
         strategy: 'lines' for ruled tables (default), 'text' for borderless ones.
 
     Returns:
-        A list of {index, page, header, rows, ncols}. `header` is sanitized;
-        `rows` are the data rows (header excluded), each cell a stripped string.
+        List of {index, page, header, rows, ncols}. `header` is sanitized; `rows`
+        excludes the header, each cell a stripped string.
     """
     settings = {"vertical_strategy": strategy, "horizontal_strategy": strategy}
     tables: list[dict] = []
@@ -80,8 +71,8 @@ def extract_tables(path: str, select=None, strategy: str = "lines") -> list[dict
 def tables_as_text(tables: list[dict]) -> str:
     """Render extracted tables to a flat, model-friendly text block.
 
-    This is what the `LLM_GETS_ALL_TABLES_AS_TEXT` / `LLM_GETS_SOME_TABLES_AS_TEXT`
-    modes feed to the model — a compact textual view, not the raw PDF.
+    What the LLM_GETS_*_TABLES_AS_TEXT modes feed the model — a compact text view,
+    not the raw PDF.
     """
     if not tables:
         return "(no tables detected)"

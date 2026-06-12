@@ -1,13 +1,8 @@
-"""PdfInsightAgent — the base agent that decides which mode agent to use.
+"""PdfInsightAgent: the base agent that picks which mode agent runs.
 
-Hybrid config/reasoning router: it resolves the mode from the precedence chain
-(request > session > env > default), records it on the session + a one-line UI
-banner, then dispatches:
-  * a pinned mode -> straight to its specialist (DETERMINISTIC, no routing LLM);
-  * `auto`        -> defers to the reasoning `router_agent` LlmAgent.
-
-The dispatch map is supplied by `modes.build_dispatch()` so the coordinator never
-hard-codes the mode list.
+Resolves the mode (request > session > env > default), records it + a UI banner,
+then dispatches: a pinned mode goes straight to its specialist (no routing LLM);
+`auto` defers to the reasoning router. Dispatch map comes from build_dispatch().
 """
 from __future__ import annotations
 
@@ -27,20 +22,19 @@ from .stores import list_corpus_schema, run_corpus_sql
 from .tools import extract_tables, set_pdf_mode
 
 def build_router() -> LlmAgent:
-    """Fresh auto-mode router per build. An ADK agent attaches to ONE parent, and
-    the Streamlit UI reloads the agent module (to rebind the model on a backend
-    switch) which re-builds root_agent — so the router must NOT be a module-level
-    singleton, else the second build hits 'already has a parent'."""
+    """Fresh auto-mode router per build.
+
+    An ADK agent attaches to ONE parent, and the UI reloads this module to rebind
+    the model — so a module-level singleton would hit 'already has a parent'.
+    """
     return LlmAgent(
         name="pdf_router",
         model=get_model(),
         description="Auto mode: answers from the active PDF or the whole-corpus DB, "
                     "whichever the question needs.",
-        # The router picks the data source by question shape: single-document questions
-        # read the active PDF (extract_tables); questions spanning reports or asking
-        # about change over time use the corpus DB (the only source holding every week).
-        # Keep extract_tables FIRST so the offline MockLlm — which has no corpus branch
-        # — still defaults to the single-PDF path and existing routing tests hold.
+        # Router picks the source by question shape: single-doc -> active PDF
+        # (extract_tables); cross-report / over-time -> corpus DB. Keep extract_tables
+        # FIRST so the offline MockLlm (no corpus branch) still defaults to single-PDF.
         instruction=(
             "You answer questions about PDF documents of ANY kind — reports, financial "
             "statements, invoices, contracts, forms, research papers, manuals — whatever "
@@ -63,7 +57,7 @@ def build_router() -> LlmAgent:
 
 
 class PdfInsightAgent(BaseAgent):
-    """Hybrid config/reasoning router (see module docstring)."""
+    """Config/reasoning router — see module docstring."""
 
     router: LlmAgent
     dispatch: dict
@@ -82,8 +76,7 @@ class PdfInsightAgent(BaseAgent):
         )
         path = _resolve_pdf_path(text, state)
 
-        # Make path/mode visible immediately (children read state in-process) and
-        # durable (state_delta on the banner event the UI shows).
+        # Visible in-process (children read state) AND durable (state_delta on the banner).
         state["pdf_path"] = path
         state["active_pdf_mode"] = mode
         yield _text_event(
@@ -91,10 +84,9 @@ class PdfInsightAgent(BaseAgent):
             state_delta={"active_pdf_mode": mode, "pdf_path": path},
         )
 
-        # Treat a NEW active PDF as an upload: eagerly ingest it into the
-        # per-document SQLite (replace) AND append it to the corpus, regardless of
-        # which mode runs this turn. Gated on `ingested_pdf` so it happens once per
-        # document. Ingestion failures are reported, not fatal — the turn proceeds.
+        # A new active PDF = an upload: ingest into SQLite (replace) + corpus (append),
+        # whatever mode runs. Gated on `ingested_pdf` so it's once per doc. Failures
+        # are reported, not fatal.
         if path and state.get("ingested_pdf") != path:
             try:
                 summary = ingest_pdf_everywhere(path, state)
