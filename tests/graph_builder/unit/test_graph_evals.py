@@ -1,6 +1,6 @@
 """Offline unit tests for the resolver scorer (pure, no LLM). Locks the eval
 LOGIC so a green scorecard means what we think it means."""
-from apps.graph_builder.evals import score
+from backend.graph_builder.evals import score
 
 _SCENARIO = {
     "name": "t",

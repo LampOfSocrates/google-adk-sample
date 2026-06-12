@@ -1,5 +1,5 @@
 """Phase 1 — the deterministic mermaid renderer. No LLM, no ADK runner."""
-from apps.text_to_diagram.render import render_mermaid
+from backend.text_to_diagram.render import render_mermaid
 
 
 def test_empty_triads_yield_placeholder():

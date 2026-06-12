@@ -21,8 +21,8 @@ from decimal import Decimal
 
 import pytest
 
-from apps.pdf_insight.stores.base import jsonable, validate_select
-from apps.pdf_insight.stores.duckdb_store import _to_num
+from backend.pdf_insight.stores.base import jsonable, validate_select
+from backend.pdf_insight.stores.duckdb_store import _to_num
 
 
 # --------------------------------------------------------- validate_select ----

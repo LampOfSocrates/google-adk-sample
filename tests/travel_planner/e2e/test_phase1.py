@@ -13,7 +13,7 @@ os.environ["LLM_BACKEND"] = os.environ.get("LIVE_BACKEND", "gemini")
 
 import pytest  # noqa: E402
 
-from apps.travel_planner.agent import root_agent  # noqa: E402
+from backend.travel_planner.agent import root_agent  # noqa: E402
 
 pytestmark = pytest.mark.live
 

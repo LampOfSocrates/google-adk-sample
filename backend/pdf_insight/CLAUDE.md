@@ -4,7 +4,7 @@ Multi-mode PDF Q&A agent: one `PdfInsightAgent` (custom `BaseAgent`) routes a
 question to one of five strategies. Full design: `docs/plans/pdf_insight.md`.
 
 ## Boundary (what to touch)
-- This app = `apps/pdf_insight/` + `tests/pdf_insight/`. Layout: `agent.py` assembles
+- This app = `backend/pdf_insight/` + `tests/pdf_insight/`. Layout: `agent.py` assembles
   `root_agent`; `coordinator.py` = base router (`PdfInsightAgent`); `modes/` = one
   module per mode (`pdfpart.py`, `text2sql.py`, `pdfbytes.py`, `corpus.py`) registered via
   `modes.build_dispatch()`; `stores/` = the SQL backends behind one `SqlStore`

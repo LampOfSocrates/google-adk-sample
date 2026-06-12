@@ -1,17 +1,17 @@
 # google-adk-sample
 
 A **holding repo for four independent ADK agents**. Each lives in its own folder
-under `apps/`, is discovered by ADK on its own (`root_agent`), and can be run,
+under `backend/`, is discovered by ADK on its own (`root_agent`), and can be run,
 tested, and operated on its own. They share one thing: a single model layer
-(`shared/`) that runs on five interchangeable backends, so any agent works on
+(`backend/shared/`) that runs on five interchangeable backends, so any agent works on
 `mock` (offline) or a real LLM without code changes.
 
 | # | Agent | Folder | One line |
 |---|---|---|---|
-| 1 | **Travel Planner** | `apps/travel_planner/` | Coordinator that routes to a weather sub-agent + a web-search agent-tool. |
-| 2 | **PDF Insight** | `apps/pdf_insight/` | Multi-mode PDF Q&A: extract tables, ask in natural language, or run SQL over one PDF or a whole corpus. |
-| 3 | **Text-to-Diagram** | `apps/text_to_diagram/` | Stateless pipeline: prose → knowledge-graph triads → mermaid diagram. |
-| 4 | **Graph Builder** | `apps/graph_builder/` | Conversational, *accreting* knowledge graph — the entity resolver (the moat) of **Cartograph** (`docs/cartograph-brief.md`). |
+| 1 | **Travel Planner** | `backend/travel_planner/` | Coordinator that routes to a weather sub-agent + a web-search agent-tool. |
+| 2 | **PDF Insight** | `backend/pdf_insight/` | Multi-mode PDF Q&A: extract tables, ask in natural language, or run SQL over one PDF or a whole corpus. |
+| 3 | **Text-to-Diagram** | `backend/text_to_diagram/` | Stateless pipeline: prose → knowledge-graph triads → mermaid diagram. |
+| 4 | **Graph Builder** | `backend/graph_builder/` | Conversational, *accreting* knowledge graph — the entity resolver (the moat) of **Cartograph** (`docs/cartograph-brief.md`). |
 
 The four agent sections below each cover **purpose · main folders · how to run**.
 Cross-cutting material (backends, the shared layer, the Streamlit UI, testing,
@@ -29,8 +29,8 @@ through ADK's LiteLlm wrapper (`pip install "google-adk[extensions]"`).
 Any agent can be driven three ways:
 
 - **`adk web`** — the ADK dev UI + debugger; auto-discovers every folder under
-  `apps/`. Pick an agent from the dropdown. (`./local_run.sh` wraps this and sets
-  `PYTHONPATH` so the agents' `shared.*` imports resolve.)
+  `backend/`. Pick an agent from the dropdown. (`./local_run.sh` wraps this and sets
+  `PYTHONPATH` so the agents' `backend.shared.*` imports resolve.)
 - **`streamlit run apps/pages/streamlit_app.py`** — the Claude-style product chat
   UI (thinking blocks, live mermaid render, per-turn debug tab) over all four
   agents. (`./local_run.sh ui` wraps this.)
@@ -41,7 +41,7 @@ all ADK event streaming funnels through `shared/ui_stream.py`.
 
 ---
 
-## 1. Travel Planner — `apps/travel_planner/`  ✅ Done
+## 1. Travel Planner — `backend/travel_planner/`  ✅ Done
 
 **Purpose.** A textbook ADK coordinator that owns no domain logic and routes each
 request to the right specialist. It's the reference for the two ways one agent can
@@ -70,14 +70,14 @@ pytest -m e2e        tests/travel_planner         # live (needs a key)
 
 ---
 
-## 2. PDF Insight — `apps/pdf_insight/`  🟢 4 modes + upload
+## 2. PDF Insight — `backend/pdf_insight/`  🟢 4 modes + upload
 
 **Purpose.** Multi-mode PDF Q&A. One `PdfInsightAgent` (a custom `BaseAgent`
 router) sends a question to one of five strategies; deterministic work (PDF parse,
 SQL ingest/exec, mode-when-pinned) stays in code/tools, never in an LlmAgent — only
 `auto`-routing and SQL generation call the model. Uploading a PDF makes it the
 active document and **appends** it to a growing corpus. Full design:
-`docs/plans/pdf_insight.md`; scope note: `apps/pdf_insight/CLAUDE.md`.
+`docs/plans/pdf_insight.md`; scope note: `backend/pdf_insight/CLAUDE.md`.
 
 Modes (constants in `config.py`): `LLM_GETS_ALL_TABLES_AS_TEXT`,
 `LLM_GETS_SOME_TABLES_AS_TEXT`, `LLM_MAKES_SQL_FROM_CHAT` (per-PDF SQLite),
@@ -106,6 +106,12 @@ pytest -m integration tests/pdf_insight     # agent/SQL/corpus under mock
 pytest -m e2e         tests/pdf_insight     # live modes (needs a key)
 ```
 
+The integration tests check **correctness offline, not just smoke**: the
+domain-aware `mock_pdf_llm.py` actually computes answers from the parsed tables
+(not a canned string), and those answers are asserted against committed golden
+numbers in `tests/pdf_insight/fixtures/risk_report.golden.json`. So a wrong
+extraction, SQL, or corpus query fails the run without spending a single token.
+
 **Generate test PDFs & build the corpus.** Synthetic, multi-table risk reports
 (Greeks across 4 regions, 16 tables/4 pages) — seeded → deterministic. `tests/pdf_insight/samples/*`
 and `data/pdf_corpus.duckdb` are gitignored (regenerable).
@@ -128,7 +134,7 @@ On Windows PowerShell, invoke via the venv, e.g. `.venv\Scripts\python.exe scrip
 
 ---
 
-## 3. Text-to-Diagram — `apps/text_to_diagram/`  ✅ Done
+## 3. Text-to-Diagram — `backend/text_to_diagram/`  ✅ Done
 
 **Purpose.** A stateless two-stage `SequentialAgent` that turns free text into a
 mermaid knowledge-graph diagram, and deliberately contrasts the two kinds of ADK
@@ -157,7 +163,7 @@ pytest -m integration tests/text_to_diagram  # the full pipeline under mock
 
 ---
 
-## 4. Graph Builder — `apps/graph_builder/`  ✅ Resolver slice done
+## 4. Graph Builder — `backend/graph_builder/`  ✅ Resolver slice done
 
 **Purpose.** Text-to-Diagram grown up. Where §3 is stateless (extract, render,
 forget), Graph Builder **accretes**: a persistent graph lives in
@@ -230,11 +236,14 @@ pytest -m live --backend gemini      # Gemini    (needs GOOGLE_API_KEY; this is 
 On Windows PowerShell, invoke pytest via the venv:
 `.venv\Scripts\python.exe -m pytest -m live --backend deepseek -v`
 
-How it works: the agent binds its model **at import**, so `conftest.py` freezes the
-`--backend` choice (in `LIVE_BACKEND`) before collection, and each live test module
-re-applies it just before importing its agent. That's why a live run is immune to the
-offline modules that force `LLM_BACKEND=mock` at import. All five backends are
-smoke-tested 3/3 (`tests/shared/smoke-results/`).
+How it works: the model **object** binds lazily — per turn, via `LazyModel`
+(`shared/model.py`) — so importing an agent never freezes the backend. But an agent's
+**structure** is still chosen at build time from the active backend: which tools to
+attach and schema-vs-prompt (e.g. the Gemini-only `google_search` / native PDF gate).
+That's why the offline modules force `LLM_BACKEND=mock` at import, and why `conftest.py`
+freezes the `--backend` choice (in `LIVE_BACKEND`) before collection so each live test
+module can re-apply it just before importing its agent — keeping a live run immune to
+those offline modules. All five backends are smoke-tested 3/3 (`tests/shared/smoke-results/`).
 
 > Note: Travel Planner's `test_phase3` (web search) asserts on a `google_search`
 > result, which only runs on Gemini; other backends get the offline `web_search`
@@ -270,7 +279,7 @@ faked** (every claim is soft, provenance-tagged, no verified anchor).
 
 **Why.** L0 is objective but mechanical; the resolver is the hard, differentiating part
 (wrong-split vs over-merge). Faking grounding isolates resolution so we can measure it now
-(`apps/graph_builder/evals.py` scorer; `scripts/graph_builder/graph_eval.py` scorecard) without first
+(`backend/graph_builder/evals.py` scorer; `scripts/graph_builder/graph_eval.py` scorecard) without first
 building the whole scanner crew. On `mock` the resolver can't reason → all-new (wrong-split)
 → which is exactly the failure the real `gemini` run must fix.
 

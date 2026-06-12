@@ -1,5 +1,5 @@
 """Phase 1 — deterministic PDF extraction. Pure functions, no LLM, no runner."""
-from shared import pdf_extractor as pdf
+from backend.shared import pdf_extractor as pdf
 
 PDF = "tests/pdf_insight/fixtures/risk_report.pdf"
 

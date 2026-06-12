@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import os
 
-from shared.model import backend, get_model
+from backend.shared.model import backend, get_model
 
 from google.adk.agents import LlmAgent
 from google.adk.agents.callback_context import CallbackContext

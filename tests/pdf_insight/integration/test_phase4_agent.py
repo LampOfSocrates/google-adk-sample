@@ -8,8 +8,8 @@ import can't freeze the backend and the autouse `_backend_env` fixture pinning m
 at run time is enough. Modes are pinned per request with a `mode:` directive, so no
 initial session state is needed.
 """
-from apps.pdf_insight import config
-from apps.pdf_insight.agent import root_agent
+from backend.pdf_insight import config
+from backend.pdf_insight.agent import root_agent
 
 
 async def test_auto_mode_routes_through_extract_tables(converse):
@@ -90,7 +90,7 @@ async def test_sql_mode_reingests_when_pdf_changes(run_agent, monkeypatch):
     the active PDF is now the fixture. The old gate (`if not db_path`) skipped
     ingestion and answered from the previous document.
     """
-    from apps.pdf_insight.modes import text2sql as sqlmod
+    from backend.pdf_insight.modes import text2sql as sqlmod
 
     calls = []
     real = sqlmod.ingest_tables_to_sqlite

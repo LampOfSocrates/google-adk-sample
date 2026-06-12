@@ -9,8 +9,8 @@ import json
 
 import pytest
 
-from apps.pdf_insight.stores.corpus_tools import list_corpus_schema, run_corpus_sql
-from apps.pdf_insight.stores.duckdb_store import _jsonable
+from backend.pdf_insight.stores.corpus_tools import list_corpus_schema, run_corpus_sql
+from backend.pdf_insight.stores.duckdb_store import _jsonable
 from scripts.pdf_insight.pdf_to_duckdb import ingest_dir
 from scripts.pdf_insight.weekly_report import generate_for
 

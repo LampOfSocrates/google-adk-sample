@@ -32,8 +32,8 @@ from typing import AsyncGenerator
 
 from pydantic import ValidationError
 
-from shared.model import get_model, supports_output_schema
-from shared.schemas import TriadList
+from backend.shared.model import get_model, supports_output_schema
+from backend.shared.schemas import TriadList
 
 from google.adk.agents import BaseAgent, LlmAgent, SequentialAgent
 from google.adk.agents.invocation_context import InvocationContext

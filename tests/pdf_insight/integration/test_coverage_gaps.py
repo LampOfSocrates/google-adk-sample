@@ -16,15 +16,15 @@ import pytest
 from google.adk.runners import InMemoryRunner
 from google.genai import types
 
-from apps.pdf_insight import config, modes
-from apps.pdf_insight.stores import sqlite_store as sql_tools
-from apps.pdf_insight.stores.corpus_tools import (
+from backend.pdf_insight import config, modes
+from backend.pdf_insight.stores import sqlite_store as sql_tools
+from backend.pdf_insight.stores.corpus_tools import (
     get_corpus_store,
     list_corpus_schema,
     run_corpus_sql,
 )
-from apps.pdf_insight.stores.duckdb_store import _jsonable
-from apps.pdf_insight.modes import _common, corpus, pdfbytes, pdfpart, text2sql
+from backend.pdf_insight.stores.duckdb_store import _jsonable
+from backend.pdf_insight.modes import _common, corpus, pdfbytes, pdfpart, text2sql
 
 FIXTURE = "tests/pdf_insight/fixtures/risk_report.pdf"
 
@@ -295,7 +295,7 @@ def test_postgres_store_is_a_documented_placeholder():
     run_select surfaces the unimplemented connection as a clean error dict (it
     catches the raise), while list_schema raises directly.
     """
-    from apps.pdf_insight.stores import PostgresStore
+    from backend.pdf_insight.stores import PostgresStore
 
     store = PostgresStore("postgresql://localhost:5432/pdf_insight")
     out = store.run_select("SELECT 1")  # _connect_readonly raises -> caught -> error dict
@@ -310,7 +310,7 @@ def test_postgres_store_is_a_documented_placeholder():
 # ===========================================================================
 def test_get_corpus_store_defaults_to_duckdb(monkeypatch):
     """corpus_tools.py — CORPUS_BACKEND unset resolves to a DuckDBStore."""
-    from apps.pdf_insight.stores import DuckDBStore
+    from backend.pdf_insight.stores import DuckDBStore
 
     monkeypatch.delenv("CORPUS_BACKEND", raising=False)
     assert isinstance(get_corpus_store({"corpus_db": "x.duckdb"}), DuckDBStore)
@@ -321,7 +321,7 @@ def test_get_corpus_store_selects_postgres(monkeypatch):
 
     Also exercises storage.postgres_dsn (the postgres branch's DSN resolver).
     """
-    from apps.pdf_insight.stores import PostgresStore
+    from backend.pdf_insight.stores import PostgresStore
 
     monkeypatch.setenv("CORPUS_BACKEND", "postgres")
     store = get_corpus_store()
@@ -346,7 +346,7 @@ def test_corpus_agent_appends_nonempty_dialect_hint():
     so the *append* branch needs a store with a non-empty hint. PostgresStore has
     one, and its dialect text must land in the agent's instruction.
     """
-    from apps.pdf_insight.stores import PostgresStore
+    from backend.pdf_insight.stores import PostgresStore
 
     agent = corpus.build_corpus_agent(PostgresStore("postgresql://x"))
     assert "Postgres syntax" in agent.instruction
@@ -361,7 +361,7 @@ def test_text2sql_agent_threads_sqlite_dialect_hint():
     hardcodes the REPLACE/CAST itself.) Assert the hint is in the inner agent's
     instruction — the same dialect_hint contract corpus mode already honors.
     """
-    from apps.pdf_insight.stores.sqlite_store import SQLiteStore
+    from backend.pdf_insight.stores.sqlite_store import SQLiteStore
 
     mode_agent = text2sql.build()[config.SQL_FROM_TEXT]  # SqlModeAgent
     assert SQLiteStore.dialect_hint in mode_agent.text2sql.instruction

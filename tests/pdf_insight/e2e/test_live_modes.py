@@ -18,8 +18,8 @@ import json
 
 import pytest
 
-from apps.pdf_insight import config
-from apps.pdf_insight.agent import root_agent
+from backend.pdf_insight import config
+from backend.pdf_insight.agent import root_agent
 from scripts.pdf_insight.pdf_to_duckdb import ingest_dir
 from scripts.pdf_insight.weekly_report import generate_for
 

@@ -185,7 +185,7 @@ class MockLlm(BaseLlm):
     """Deterministic, network-free LLM for offline development.
 
     Set `LLM_BACKEND=mock` (the default) to use it everywhere via the model
-    factory in `shared.model`.
+    factory in `backend.shared.model`.
     """
 
     model: str = "mock"

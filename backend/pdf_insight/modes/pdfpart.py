@@ -8,8 +8,8 @@ from __future__ import annotations
 
 from typing import AsyncGenerator, Optional
 
-from shared import pdf_extractor as pdf
-from shared.model import get_model
+from backend.shared import pdf_extractor as pdf
+from backend.shared.model import get_model
 
 from google.adk.agents import BaseAgent, LlmAgent
 from google.adk.agents.invocation_context import InvocationContext

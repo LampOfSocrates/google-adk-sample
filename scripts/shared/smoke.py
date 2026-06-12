@@ -30,7 +30,7 @@ from dotenv import load_dotenv  # noqa: E402
 
 load_dotenv(os.path.join(REPO_ROOT, ".env"))
 
-from shared.model import get_model  # noqa: E402
+from backend.shared.model import get_model  # noqa: E402
 from google.adk.runners import InMemoryRunner  # noqa: E402
 from google.genai import types  # noqa: E402
 
@@ -87,17 +87,17 @@ async def smoke(label, import_agent, prompt, expect=None):
 
 
 def _travel():
-    from apps.travel_planner.agent import root_agent
+    from backend.travel_planner.agent import root_agent
     return root_agent
 
 
 def _diagram():
-    from apps.text_to_diagram.agent import root_agent
+    from backend.text_to_diagram.agent import root_agent
     return root_agent
 
 
 def _pdf():
-    from apps.pdf_insight.agent import root_agent
+    from backend.pdf_insight.agent import root_agent
     return root_agent
 
 

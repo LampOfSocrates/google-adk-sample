@@ -7,7 +7,7 @@ import os
 
 os.environ["LLM_BACKEND"] = "mock"  # must precede the agent import (model is bound then)
 
-from apps.text_to_diagram.agent import root_agent  # noqa: E402
+from backend.text_to_diagram.agent import root_agent  # noqa: E402
 
 
 async def test_pipeline_emits_mermaid_from_triads(converse):

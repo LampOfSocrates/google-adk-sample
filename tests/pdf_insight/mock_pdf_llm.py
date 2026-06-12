@@ -29,7 +29,7 @@ from typing import AsyncGenerator
 from google.adk.models.llm_request import LlmRequest
 from google.adk.models.llm_response import LlmResponse
 
-from shared.mock_llm import (
+from backend.shared.mock_llm import (
     MockLlm,
     _call_part,
     _current_turn,

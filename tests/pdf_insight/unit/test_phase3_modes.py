@@ -1,6 +1,6 @@
 """Phase 3 — mode resolution precedence (request > session > env > auto). No LLM."""
-from apps.pdf_insight import config
-from apps.pdf_insight.tools import set_pdf_mode
+from backend.pdf_insight import config
+from backend.pdf_insight.tools import set_pdf_mode
 
 
 def test_default_is_auto():

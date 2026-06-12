@@ -19,7 +19,7 @@ import shutil
 
 import pytest
 
-from apps.pdf_insight.stores import DuckDBStore
+from backend.pdf_insight.stores import DuckDBStore
 
 GREEKS = "tests/pdf_insight/fixtures/risk_report.pdf"     # kind A (16 Greek tables)
 FUNDING = "tests/pdf_insight/fixtures/funding_report.pdf"  # kind B (4 funding tables)

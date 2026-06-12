@@ -7,11 +7,11 @@ idempotency, both-backend ingest, the coordinator hook) plus the defensive
 branches the wiring adds. The pdf-conftest autouse fixture points both stores at a
 temp dir, so nothing here touches the repo's data/.
 """
-from apps.pdf_insight import config
-from apps.pdf_insight.agent import root_agent
-from apps.pdf_insight.ingest import ingest_pdf_everywhere
-from apps.pdf_insight.stores import DuckDBStore, SQLiteStore
-from apps.pdf_insight.stores import duckdb_store
+from backend.pdf_insight import config
+from backend.pdf_insight.agent import root_agent
+from backend.pdf_insight.ingest import ingest_pdf_everywhere
+from backend.pdf_insight.stores import DuckDBStore, SQLiteStore
+from backend.pdf_insight.stores import duckdb_store
 
 FIXTURE = "tests/pdf_insight/fixtures/risk_report.pdf"
 
@@ -160,7 +160,7 @@ def test_agent_module_reload_rebuilds_cleanly():
     each time, else the reload raises 'agent already has a parent'."""
     import importlib
 
-    from apps.pdf_insight import agent as agent_mod
+    from backend.pdf_insight import agent as agent_mod
 
     importlib.reload(agent_mod)  # must not raise a pydantic ValidationError
     assert agent_mod.root_agent.name == "pdf_insight"

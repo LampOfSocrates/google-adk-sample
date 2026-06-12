@@ -65,7 +65,7 @@ class MermaidAgent(BaseAgent):
 
 ## Components & files
 ```
-apps/text_to_diagram/
+backend/text_to_diagram/
   __init__.py        # from . import agent
   agent.py           # extractor, MermaidAgent, root_agent (SequentialAgent)
   render.py          # render_mermaid (pure; unit-tested with no LLM)

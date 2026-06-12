@@ -33,7 +33,7 @@ Sentinel `auto` = "no mode pinned, let the LLM router decide".
 
 ## Config resolution (precedence: request > session > env > default)
 ```python
-# apps/pdf_insight/config.py
+# backend/pdf_insight/config.py
 MODES = {"LLM_GETS_ALL_TABLES_AS_TEXT","LLM_GETS_SOME_TABLES_AS_TEXT",
          "LLM_MAKES_SQL_FROM_CHAT","LLM_QUERIES_CORPUS","LLM_GETS_PDF_BYTES","auto"}
 
@@ -81,7 +81,7 @@ Rejected for clarity — the custom agent makes the config/reasoning split expli
 
 ## Components & files
 ```
-apps/pdf_insight/
+backend/pdf_insight/
   __init__.py        # from . import agent
   agent.py           # assembles root_agent from coordinator + modes registry
   coordinator.py     # PdfInsightAgent (base agent), router_agent

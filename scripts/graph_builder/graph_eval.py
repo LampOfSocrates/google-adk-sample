@@ -33,8 +33,8 @@ load_dotenv()
 from google.adk.runners import InMemoryRunner  # noqa: E402
 from google.genai import types  # noqa: E402
 
-from apps.graph_builder.agent import root_agent  # noqa: E402
-from apps.graph_builder.evals import SCENARIOS, score  # noqa: E402
+from backend.graph_builder.agent import root_agent  # noqa: E402
+from backend.graph_builder.evals import SCENARIOS, score  # noqa: E402
 
 APP = "graph_builder"
 

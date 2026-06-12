@@ -31,7 +31,7 @@ import re
 
 import duckdb
 
-from shared import pdf_extractor as pdf
+from backend.shared import pdf_extractor as pdf
 
 from .base import SqlStore, jsonable
 

@@ -214,7 +214,7 @@ enriching.** Cartograph is the destination Text-to-Diagram was already pointing 
 2. **Shape: standalone graph + view.** Cartograph owns the graph, overlays, and diagram
    UI end-to-end. (Revisit a Backstage/Datadog feeder play later if distribution stalls.)
 3. **First build: ~~the L0 survey agent~~ → revised to the L1 resolver.** The brief
-   argues for L0 first, but the first code slice (`apps/graph_builder`) built the **L1
+   argues for L0 first, but the first code slice (`backend/graph_builder`) built the **L1
    entity resolver** — the moat — over chat text with grounding *faked*, to isolate and
    measure resolution before standing up the scanner crew. L0 (`l0-survey-agent.md`) is
    spec'd + fixtured but not yet built. See README DecisionLog (2026-06-05).

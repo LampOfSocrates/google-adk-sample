@@ -17,8 +17,8 @@ Backend awareness: google_search is Gemini-only, so on every non-Gemini backend
 (mock, openai, deepseek, bedrock) we swap in the offline `web_search` stand-in.
 `root_agent` is what ADK discovers.
 """
-from shared.model import get_model, is_gemini
-from shared.mock_llm import web_search
+from backend.shared.model import get_model, is_gemini
+from backend.shared.mock_llm import web_search
 
 from google.adk.agents import Agent
 from google.adk.tools import ToolContext, google_search

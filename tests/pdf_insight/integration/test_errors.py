@@ -5,9 +5,9 @@ tool's error dict, using a throwaway broken PDF (no committed fixture needed).
 """
 import pytest
 
-from apps.pdf_insight import config
-from apps.pdf_insight.modes import text2sql, pdfpart
-from apps.pdf_insight.tools import extract_tables
+from backend.pdf_insight import config
+from backend.pdf_insight.modes import text2sql, pdfpart
+from backend.pdf_insight.tools import extract_tables
 
 # No module-top LLM_BACKEND write: mode agents bind lazily in build(), and the
 # autouse _backend_env fixture pins mock at run time — so there is nothing to leak.

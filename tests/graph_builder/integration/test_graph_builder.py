@@ -9,7 +9,7 @@ import os
 
 os.environ["LLM_BACKEND"] = "mock"  # must precede the agent import (model binds then)
 
-from apps.graph_builder.agent import root_agent  # noqa: E402
+from backend.graph_builder.agent import root_agent  # noqa: E402
 
 
 async def test_graph_accretes_across_turns_with_provenance(converse):

@@ -14,9 +14,9 @@ hazard (one shared agent, two backends) and asserts lazy binding defuses it.
 """
 import os
 
-from apps.pdf_insight import config
-from apps.pdf_insight.agent import root_agent
-from shared.mock_llm import MockLlm
+from backend.pdf_insight import config
+from backend.pdf_insight.agent import root_agent
+from backend.shared.mock_llm import MockLlm
 
 
 def _bound_models(agent):

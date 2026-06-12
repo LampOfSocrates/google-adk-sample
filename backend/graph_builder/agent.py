@@ -39,8 +39,8 @@ import json
 import re
 from typing import AsyncGenerator
 
-from shared.model import get_model, supports_output_schema
-from shared.schemas import MentionList, ResolutionList
+from backend.shared.model import get_model, supports_output_schema
+from backend.shared.schemas import MentionList, ResolutionList
 
 from google.adk.agents import BaseAgent, LlmAgent, SequentialAgent
 from google.adk.agents.invocation_context import InvocationContext

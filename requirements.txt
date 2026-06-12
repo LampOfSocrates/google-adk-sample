@@ -3,3 +3,14 @@ pdfplumber
 duckdb  # local corpus for parsed PDF tables (scripts/pdf_insight/pdf_to_duckdb.py + SQL mode)
 python-dotenv
 boto3  # only needed for LLM_BACKEND=bedrock (LiteLLM uses it for AWS auth)
+
+# Backend server (backend/server.py): FastAPI + SSE + multipart uploads.
+fastapi
+uvicorn[standard]
+python-multipart
+
+# Streamlit client (apps/pages): talks to the server over HTTP/SSE.
+streamlit
+streamlit-mermaid
+pandas
+httpx

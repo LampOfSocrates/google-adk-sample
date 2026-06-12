@@ -10,11 +10,11 @@ import json
 import pytest
 from google.adk.agents import LlmAgent
 
-from shared import pdf_extractor as pdf
+from backend.shared import pdf_extractor as pdf
 from tests.pdf_insight.mock_pdf_llm import MockPdfLlm
 
-from apps.pdf_insight.stores.corpus_tools import list_corpus_schema, run_corpus_sql
-from apps.pdf_insight.stores.sqlite_store import ingest_tables_to_sqlite, list_sql_schema, run_sql
+from backend.pdf_insight.stores.corpus_tools import list_corpus_schema, run_corpus_sql
+from backend.pdf_insight.stores.sqlite_store import ingest_tables_to_sqlite, list_sql_schema, run_sql
 from scripts.pdf_insight.pdf_to_duckdb import ingest_dir
 from scripts.pdf_insight.weekly_report import generate_for
 

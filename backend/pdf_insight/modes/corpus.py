@@ -13,7 +13,7 @@ via CORPUS_BACKEND — you don't swap engines mid-conversation.
 """
 from __future__ import annotations
 
-from shared.model import get_model
+from backend.shared.model import get_model
 
 from google.adk.agents import LlmAgent
 

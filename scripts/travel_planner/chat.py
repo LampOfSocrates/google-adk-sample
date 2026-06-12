@@ -16,7 +16,7 @@ import certifi
 os.environ["SSL_CERT_FILE"] = certifi.where()
 os.environ.pop("SSL_CERT_DIR", None)
 
-# Make `import apps.travel_planner` work when run from the repo root.
+# Make `import backend.travel_planner` work when run from the repo root.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from dotenv import load_dotenv
@@ -26,7 +26,7 @@ load_dotenv()
 from google.adk.runners import InMemoryRunner  # noqa: E402  (after load_dotenv)
 from google.genai import types  # noqa: E402
 
-from apps.travel_planner.agent import root_agent  # noqa: E402
+from backend.travel_planner.agent import root_agent  # noqa: E402
 
 APP = "travel_planner"
 

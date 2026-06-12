@@ -77,9 +77,8 @@ def serialize_debug_turns(turns: list[dict]) -> list[dict]:
 
 
 def deserialize_debug_turns(turns: list[dict]) -> list[dict]:
-    """Rebuild EventSnapshot/PartSummary objects so the Debug tab can render them.
-    Imports lazily; ui_debug pulls in Streamlit only inside its render functions."""
-    from .ui_debug import EventSnapshot, PartSummary
+    """Rebuild EventSnapshot/PartSummary objects so the Debug tab can render them."""
+    from backend.events import EventSnapshot, PartSummary
 
     out = []
     for t in turns or []:

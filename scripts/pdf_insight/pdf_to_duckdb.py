@@ -26,8 +26,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 
 import duckdb  # noqa: E402 - only for --query
 
-from apps.pdf_insight import storage  # noqa: E402
-from apps.pdf_insight.stores import DuckDBStore  # noqa: E402
+from backend.pdf_insight import storage  # noqa: E402
+from backend.pdf_insight.stores import DuckDBStore  # noqa: E402
 
 SAMPLES_DIR = os.path.join("tests", "pdf_insight", "samples")
 # Same default the reader resolves, so build + query agree and both honour

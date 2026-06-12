@@ -10,7 +10,7 @@ os.environ["LLM_BACKEND"] = os.environ.get("LIVE_BACKEND", "gemini")
 
 import pytest  # noqa: E402
 
-from apps.travel_planner.agent import (  # noqa: E402
+from backend.travel_planner.agent import (  # noqa: E402
     get_weather,
     root_agent,
     set_preferred_units,
