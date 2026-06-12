@@ -71,6 +71,23 @@ def stream_message(app: str, session_id: str, message: str, pdf_mode: str | None
                     yield json.loads(line[6:])
 
 
+def run_turn(app: str, session_id: str, message: str, pdf_mode: str | None = None) -> dict:
+    """Consume a whole turn and return the aggregate — for non-streaming clients
+    (the terminal REPL, eval/demo/smoke scripts) that want the final answer + state
+    rather than live frames. Returns {text, usage, session_info, error}."""
+    text, usage, session_info, error = "", None, {}, None
+    for fr in stream_message(app, session_id, message, pdf_mode):
+        kind = fr["kind"]
+        if kind == "text_delta":
+            text += fr.get("text") or ""
+        elif kind == "final":
+            usage = fr.get("usage")
+            session_info = fr.get("session_info", {})
+        elif kind == "error":
+            error = fr.get("text")
+    return {"text": text, "usage": usage, "session_info": session_info, "error": error}
+
+
 # --- pdf_insight -----------------------------------------------------------
 def upload_pdf(filename: str, data: bytes) -> dict:
     with _client() as c:

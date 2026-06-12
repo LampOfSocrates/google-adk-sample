@@ -6,25 +6,18 @@ Identity Provider — plus a distractor (user-service) that must NOT be merged i
 it. The question the demo answers: does the graph ACCRETE onto one canonical node,
 or fork into many?
 
-    python scripts/graph_builder/graph_demo.py                 # offline mock: shows WRONG-SPLIT
-    LLM_BACKEND=gemini python scripts/graph_builder/graph_demo.py   # real resolver: should MERGE
+    ./local_run.sh server                                   # start the server first
+    python scripts/graph_builder/graph_demo.py                    # offline mock: WRONG-SPLIT
+    LLM_BACKEND=gemini python scripts/graph_builder/graph_demo.py # real resolver: should MERGE
 
 On mock the resolver can't reason, so every mention becomes a new node — that's the
 failure you'd expect, and the reason the real test needs a real model. On gemini,
 the four surface names should collapse to one auth-service node carrying five
-claims from three sources, with user-service kept separate.
+claims from three sources, with user-service kept separate. The graph is read from
+the session state the server returns after each turn.
 """
-import asyncio
 import os
 import sys
-
-import certifi
-
-# Stray SSL_CERT_FILE on this box points at a missing CA bundle and crashes the
-# google-genai HTTPS client the moment LLM_BACKEND=gemini makes a real call.
-# Force a known-good bundle before any google.* import. See scripts/shared/smoke.py.
-os.environ["SSL_CERT_FILE"] = certifi.where()
-os.environ.pop("SSL_CERT_DIR", None)
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
@@ -34,14 +27,11 @@ try:
 except (AttributeError, ValueError):
     pass
 
-from dotenv import load_dotenv
+from dotenv import load_dotenv  # noqa: E402
 
 load_dotenv()
 
-from google.adk.runners import InMemoryRunner  # noqa: E402
-from google.genai import types  # noqa: E402
-
-from backend.graph_builder.agent import root_agent  # noqa: E402  (model binds at import)
+from apps.pages import api_client  # noqa: E402  (pure-httpx client SDK; no ADK)
 
 APP = "graph_builder"
 
@@ -55,17 +45,6 @@ TURNS = [
     "[incident INC-1801] Another auth-service timeout. The user-service that calls "
     "auth-service degraded as a result.",
 ]
-
-
-async def _ask(runner, session_id, text):
-    msg = types.Content(role="user", parts=[types.Part(text=text)])
-    final = ""
-    async for event in runner.run_async(
-        user_id="you", session_id=session_id, new_message=msg
-    ):
-        if event.is_final_response() and event.content:
-            final = event.content.parts[0].text
-    return final
 
 
 def _dump_graph(graph):
@@ -87,26 +66,26 @@ def _dump_graph(graph):
             print(f"  {e['from']} --{e['predicate']}--> {e['to']}  ({e['source']})")
 
 
-async def main():
+def main():
+    if not api_client.health():
+        sys.exit(f"server unreachable at {api_client.BASE_URL} — start it with "
+                 "`./local_run.sh server`")
     backend = os.environ.get("LLM_BACKEND", "mock")
     print(f"backend = {backend}")
     if backend == "mock":
         print("NOTE: mock can't resolve — expect WRONG-SPLIT (one component, many nodes).")
         print("      Run with LLM_BACKEND=gemini to test real resolution.\n")
 
-    runner = InMemoryRunner(agent=root_agent, app_name=APP)
-    session = await runner.session_service.create_session(app_name=APP, user_id="you")
-
+    session_id = api_client.create_session(APP, backend)
+    state = {}
     for i, turn in enumerate(TURNS, 1):
         print(f"\n{'#' * 70}\n# TURN {i}: {turn}\n{'#' * 70}")
-        reply = await _ask(runner, session.id, turn)
-        print(reply)
+        res = api_client.run_turn(APP, session_id, turn)
+        print(res["error"] or res["text"])
+        state = res["session_info"].get("state", {})
 
-    refreshed = await runner.session_service.get_session(
-        app_name=APP, user_id="you", session_id=session.id
-    )
-    _dump_graph(refreshed.state.get("graph", {}))
+    _dump_graph(state.get("graph", {}))
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()

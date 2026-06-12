@@ -31,13 +31,21 @@ Any agent can be driven three ways:
 - **`adk web`** — the ADK dev UI + debugger; auto-discovers every folder under
   `backend/`. Pick an agent from the dropdown. (`./local_run.sh` wraps this and sets
   `PYTHONPATH` so the agents' `backend.shared.*` imports resolve.)
-- **`streamlit run apps/pages/streamlit_app.py`** — the Claude-style product chat
-  UI (thinking blocks, live mermaid render, per-turn debug tab) over all four
-  agents. (`./local_run.sh ui` wraps this.)
-- **`python scripts/travel_planner/chat.py`** — a terminal REPL (hardwired to Travel Planner).
+- **FastAPI server + Streamlit client** — the Claude-style product chat UI
+  (thinking blocks, live mermaid render, debug + agent-editor tabs, conversations)
+  over all four agents. The server (`backend/server.py`) owns the ADK runners and
+  streams turns over SSE; the client (`apps/pages/`) is a thin HTTP front-end.
+  Start both: `./local_run.sh server` then `./local_run.sh ui` (or `./local_run.sh all`).
+- **`python scripts/travel_planner/chat.py`** — a terminal REPL client for the
+  server (hardwired to Travel Planner). Like the other agent-running scripts
+  (`smoke.py`, `graph_eval.py`, `graph_demo.py`), it talks to the server over HTTP,
+  so start `./local_run.sh server` first.
 
-All Streamlit UI code lives in `apps/pages/` (`streamlit_app.py` + `ui_debug.py`);
-all ADK event streaming funnels through `shared/ui_stream.py`.
+The split: agents + the model layer live in `backend/`; the FastAPI server
+(`backend/server.py`) exposes them over a REST+SSE API (OpenAPI at `/docs`); the
+Streamlit client in `apps/pages/` (`streamlit_app.py` + `api_client.py` + `render.py`)
+holds no ADK and talks only HTTP. The UI event vocabulary lives in
+`backend/shared/ui_stream.py`, adapted from ADK by `backend/shared/adk_ui_stream.py`.
 
 ---
 
@@ -62,7 +70,8 @@ reach another: **transfer** (sub-agent) vs **call** (AgentTool).
 
 **How to run.**
 ```bash
-python scripts/travel_planner/chat.py             # terminal REPL (this agent)
+./local_run.sh server                             # start the agent server (once)
+python scripts/travel_planner/chat.py             # terminal REPL client (this agent)
 ./local_run.sh                                    # adk web → pick "travel_planner"
 pytest -m integration tests/travel_planner        # offline (mock)
 pytest -m e2e        tests/travel_planner         # live (needs a key)
@@ -189,10 +198,11 @@ claims with provenance, and renders the graph + a resolution log).
 
 **How to run.**
 ```bash
+./local_run.sh server                                          # start the agent server (once)
 python scripts/graph_builder/graph_demo.py                     # adversarial demo (mock → WRONG-SPLIT)
 LLM_BACKEND=gemini python scripts/graph_builder/graph_demo.py  # real resolver → should MERGE
 LLM_BACKEND=gemini python scripts/graph_builder/graph_eval.py  # resolver scorecard over the eval set
-./local_run.sh ui                              # Streamlit → pick "graph_builder"
+./local_run.sh ui                              # Streamlit client → pick "graph_builder"
 pytest -m unit        tests/graph_builder      # the offline scorer test
 pytest -m integration tests/graph_builder      # the resolver pipeline under mock
 ```
@@ -237,13 +247,14 @@ On Windows PowerShell, invoke pytest via the venv:
 `.venv\Scripts\python.exe -m pytest -m live --backend deepseek -v`
 
 How it works: the model **object** binds lazily — per turn, via `LazyModel`
-(`shared/model.py`) — so importing an agent never freezes the backend. But an agent's
+(`backend/shared/model.py`) — so importing an agent never freezes the backend. But an agent's
 **structure** is still chosen at build time from the active backend: which tools to
 attach and schema-vs-prompt (e.g. the Gemini-only `google_search` / native PDF gate).
 That's why the offline modules force `LLM_BACKEND=mock` at import, and why `conftest.py`
 freezes the `--backend` choice (in `LIVE_BACKEND`) before collection so each live test
 module can re-apply it just before importing its agent — keeping a live run immune to
-those offline modules. All five backends are smoke-tested 3/3 (`tests/shared/smoke-results/`).
+those offline modules. `scripts/shared/smoke.py <backend>` drives all agents through the
+server on a given backend and writes a `tests/smoke-results/<backend>.txt` scorecard.
 
 > Note: Travel Planner's `test_phase3` (web search) asserts on a `google_search`
 > result, which only runs on Gemini; other backends get the offline `web_search`

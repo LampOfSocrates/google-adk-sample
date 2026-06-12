@@ -1,107 +1,64 @@
-"""One live smoke test per agent against a chosen LLM backend.
+"""One live smoke test per agent against a chosen LLM backend — via the server.
 
+    ./local_run.sh server                  # start the server first
     python scripts/shared/smoke.py deepseek
     python scripts/shared/smoke.py bedrock
-    python scripts/shared/smoke.py            # defaults to deepseek
+    python scripts/shared/smoke.py         # defaults to deepseek
 
-Makes real (usually cheap) API calls. Each agent is isolated so one failure
-doesn't block the rest. Writes a per-provider artifact `smoke_<backend>_results.txt`
-and EXITS NON-ZERO if any agent did not PASS — so it can gate CI / be asserted on.
+Drives each agent through the FastAPI server (so it smoke-tests the whole stack:
+HTTP + SSE + the agent on the requested backend). Each agent is isolated so one
+failure doesn't block the rest. Writes a per-provider artifact under
+tests/smoke-results/<backend>.txt and EXITS NON-ZERO if any agent did not PASS — so
+it can gate CI / be asserted on. Point at another server with API_BASE_URL.
 """
-import asyncio
 import datetime
 import os
 import sys
-import traceback
-
-import certifi
-
-# Stray SSL_CERT_FILE on this box breaks the HTTPS clients; force certifi.
-os.environ["SSL_CERT_FILE"] = certifi.where()
-os.environ.pop("SSL_CERT_DIR", None)
-
-# Backend MUST be set before importing any agent (model binds at import time).
-BACKEND = (sys.argv[1] if len(sys.argv) > 1 else "deepseek").strip().lower()
-os.environ["LLM_BACKEND"] = BACKEND
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, REPO_ROOT)
+
 from dotenv import load_dotenv  # noqa: E402
 
 load_dotenv(os.path.join(REPO_ROOT, ".env"))
 
-from backend.shared.model import get_model  # noqa: E402
-from google.adk.runners import InMemoryRunner  # noqa: E402
-from google.genai import types  # noqa: E402
+from apps.pages import api_client  # noqa: E402  (pure-httpx client SDK; no ADK)
 
+BACKEND = (sys.argv[1] if len(sys.argv) > 1 else "deepseek").strip().lower()
 RESULTS = []  # (label, status, prompt, detail)
 
 
-def _model_id() -> str:
-    m = get_model()
-    return getattr(m, "model", None) or (m if isinstance(m, str) else type(m).__name__)
+def _model_id(app: str) -> str:
+    """Resolved model id for `app` on this backend, read off the agent tree."""
+    try:
+        editable = api_client.get_agents(app, BACKEND).get("editable", [])
+        models = [a["model"] for a in editable if a.get("model")]
+        return models[0] if models else BACKEND
+    except Exception:
+        return BACKEND
 
 
-async def _run(agent, prompt, app, retries=4):
-    runner = InMemoryRunner(agent=agent, app_name=app)
-    session = await runner.session_service.create_session(app_name=app, user_id="smoke")
-    msg = types.Content(role="user", parts=[types.Part(text=prompt)])
-    for attempt in range(retries):
-        try:
-            final = ""
-            async for ev in runner.run_async(
-                user_id="smoke", session_id=session.id, new_message=msg
-            ):
-                if ev.is_final_response() and ev.content and ev.content.parts:
-                    final = ev.content.parts[0].text or final
-            return final
-        except Exception as e:  # noqa: BLE001
-            s = str(e)
-            transient = any(
-                t in s for t in ("RESOURCE_EXHAUSTED", "429", "503", "UNAVAILABLE")
-            )
-            if transient and attempt < retries - 1:
-                await asyncio.sleep(20)  # rate limits / transient overload (e.g. Gemini)
-            else:
-                raise
-
-
-async def smoke(label, import_agent, prompt, expect=None):
+def smoke(label: str, app: str, prompt: str, expect: str | None = None):
     print(f"\n=== {label} === (prompt: {prompt!r})")
     status, detail = "PASS", ""
     try:
-        agent = import_agent()
-        reply = await asyncio.wait_for(_run(agent, prompt, label), timeout=180)
-        ok = bool(reply and reply.strip())
+        sid = api_client.create_session(app, BACKEND)
+        res = api_client.run_turn(app, sid, prompt)
+        reply = (res["error"] or res["text"] or "").strip()
+        ok = bool(reply) and not res["error"]
         if expect:
             ok = ok and expect.lower() in reply.lower()
         status = "PASS" if ok else "CHECK"
-        detail = (reply or "").strip()
+        detail = reply
     except Exception as e:  # noqa: BLE001 - smoke test: record, don't crash
         status = "FAIL"
         detail = f"{type(e).__name__}: {e}"
-        traceback.print_exc()
     RESULTS.append((label, status, prompt, detail))
     print(f"[{status}] {label}")
     print("  reply:", detail[:400])
 
 
-def _travel():
-    from backend.travel_planner.agent import root_agent
-    return root_agent
-
-
-def _diagram():
-    from backend.text_to_diagram.agent import root_agent
-    return root_agent
-
-
-def _pdf():
-    from backend.pdf_insight.agent import root_agent
-    return root_agent
-
-
-def _write_artifact(model_id):
+def _write_artifact(model_id: str) -> int:
     results_dir = os.path.join(REPO_ROOT, "tests", "smoke-results")
     os.makedirs(results_dir, exist_ok=True)
     path = os.path.join(results_dir, f"{BACKEND}.txt")
@@ -114,23 +71,24 @@ def _write_artifact(model_id):
         "",
     ]
     for label, status, prompt, detail in RESULTS:
-        lines.append(f"[{status}] {label}")
-        lines.append(f"  prompt: {prompt!r}")
-        lines.append(f"  result: {detail[:800]}")
-        lines.append("")
+        lines += [f"[{status}] {label}", f"  prompt: {prompt!r}",
+                  f"  result: {detail[:800]}", ""]
     with open(path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines))
     print(f"\nwrote {path}")
     return passed
 
 
-async def main():
-    model_id = _model_id()
-    print(f"backend = {BACKEND}  model = {model_id}")
-    await smoke("travel_planner", _travel, "What's the weather in Tokyo?", expect="tokyo")
-    await smoke("text_to_diagram", _diagram, "Paris is the capital of France.",
-                expect="```mermaid")
-    await smoke("pdf_insight", _pdf, "What is in this statement?")
+def main():
+    if not api_client.health():
+        sys.exit(f"server unreachable at {api_client.BASE_URL} — start it with "
+                 "`./local_run.sh server`")
+    model_id = _model_id("travel_planner")
+    print(f"backend = {BACKEND}  model = {model_id}  server = {api_client.BASE_URL}")
+    smoke("travel_planner", "travel_planner", "What's the weather in Tokyo?", expect="tokyo")
+    smoke("text_to_diagram", "text_to_diagram", "Paris is the capital of France.",
+          expect="```mermaid")
+    smoke("pdf_insight", "pdf_insight", "What is in this statement?")
 
     passed = _write_artifact(model_id)
     total = len(RESULTS)
@@ -140,4 +98,4 @@ async def main():
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()

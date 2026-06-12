@@ -1,24 +1,18 @@
 """Run the resolver eval set against a chosen backend and print a scorecard.
 
+    ./local_run.sh server                                   # start the server first
     LLM_BACKEND=openai   python scripts/graph_builder/graph_eval.py
     LLM_BACKEND=deepseek python scripts/graph_builder/graph_eval.py
     LLM_BACKEND=gemini   python scripts/graph_builder/graph_eval.py
 
-Each scenario runs in its OWN session (fresh graph), accreting its turns, then the
-final graph is scored for correct merges (no wrong-split) and over-merges (no
-fusing distinct components). Use this to measure the resolver as you tune its
-prompt. The mock backend can't resolve, so it will fail every merge — that's the
-floor, not a regression.
+Each scenario runs in its OWN server session (fresh graph), accreting its turns;
+the final graph (read from the session state the server returns) is scored for
+correct merges (no wrong-split) and over-merges (no fusing distinct components).
+The mock backend can't resolve, so it fails every merge — that's the floor, not a
+regression. The scoring (`score`, `SCENARIOS`) is pure and imported directly.
 """
-import asyncio
 import os
 import sys
-
-import certifi
-
-# Stray SSL_CERT_FILE on this box breaks the HTTPS client; force a good bundle.
-os.environ["SSL_CERT_FILE"] = certifi.where()
-os.environ.pop("SSL_CERT_DIR", None)
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 try:
@@ -30,36 +24,30 @@ from dotenv import load_dotenv  # noqa: E402
 
 load_dotenv()
 
-from google.adk.runners import InMemoryRunner  # noqa: E402
-from google.genai import types  # noqa: E402
-
-from backend.graph_builder.agent import root_agent  # noqa: E402
-from backend.graph_builder.evals import SCENARIOS, score  # noqa: E402
+from apps.pages import api_client  # noqa: E402  (pure-httpx client SDK; no ADK)
+from backend.graph_builder.evals import SCENARIOS, score  # noqa: E402  (pure; no agent)
 
 APP = "graph_builder"
 
 
-async def _run_scenario(turns):
-    runner = InMemoryRunner(agent=root_agent, app_name=APP)
-    session = await runner.session_service.create_session(app_name=APP, user_id="eval")
+def _run_scenario(backend: str, turns) -> dict:
+    """Run one scenario's turns in a fresh session; return its final graph."""
+    session_id = api_client.create_session(APP, backend)
+    state = {}
     for turn in turns:
-        msg = types.Content(role="user", parts=[types.Part(text=turn)])
-        async for _ in runner.run_async(
-            user_id="eval", session_id=session.id, new_message=msg
-        ):
-            pass
-    refreshed = await runner.session_service.get_session(
-        app_name=APP, user_id="eval", session_id=session.id
-    )
-    return refreshed.state.get("graph", {})
+        state = api_client.run_turn(APP, session_id, turn)["session_info"].get("state", {})
+    return state.get("graph", {})
 
 
-async def main():
+def main():
+    if not api_client.health():
+        sys.exit(f"server unreachable at {api_client.BASE_URL} — start it with "
+                 "`./local_run.sh server`")
     backend = os.environ.get("LLM_BACKEND", "mock")
     print(f"backend = {backend}\n{'=' * 64}")
     results = []
     for sc in SCENARIOS:
-        graph = await _run_scenario(sc["turns"])
+        graph = _run_scenario(backend, sc["turns"])
         r = score(graph, sc)
         results.append(r)
         status = "PASS" if r["passed"] else "FAIL"
@@ -79,4 +67,4 @@ async def main():
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
