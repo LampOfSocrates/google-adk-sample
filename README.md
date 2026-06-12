@@ -90,9 +90,9 @@ active document and **appends** it to a growing corpus. Full design:
 
 Modes (constants in `config.py`): `LLM_GETS_ALL_TABLES_AS_TEXT`,
 `LLM_GETS_SOME_TABLES_AS_TEXT`, `LLM_MAKES_SQL_FROM_CHAT` (per-PDF SQLite),
-`LLM_QUERIES_CORPUS` (whole-corpus DuckDB), `LLM_GETS_PDF_BYTES` (gemini-only
-placeholder), and `auto` (the LLM router decides; corpus-aware — single-doc vs
-cross-report).
+`LLM_QUERIES_CORPUS` (whole-corpus DuckDB), `LLM_GETS_PDF_BYTES` (raw PDF handed to
+any doc-capable backend — gemini/bedrock/openai; mock returns a placeholder), and
+`auto` (the LLM router decides; corpus-aware — single-doc vs cross-report).
 
 **Main folders / files.**
 - `agent.py` assembles `root_agent`; `coordinator.py` is the router (`PdfInsightAgent`).
@@ -113,6 +113,7 @@ cross-report).
 pytest -m unit        tests/pdf_insight     # fast pure-logic tests
 pytest -m integration tests/pdf_insight     # agent/SQL/corpus under mock
 pytest -m e2e         tests/pdf_insight     # live modes (needs a key)
+pytest -m e2e tests/pdf_insight/e2e/test_ui_chat.py -s   # browser UI e2e (Bedrock) — see "Browser UI e2e" below
 ```
 
 The integration tests check **correctness offline, not just smoke**: the
@@ -120,6 +121,27 @@ domain-aware `mock_pdf_llm.py` actually computes answers from the parsed tables
 (not a canned string), and those answers are asserted against committed golden
 numbers in `tests/pdf_insight/fixtures/risk_report.golden.json`. So a wrong
 extraction, SQL, or corpus query fails the run without spending a single token.
+
+**Browser UI e2e (real Streamlit + Bedrock).** `tests/pdf_insight/e2e/test_ui_chat.py`
+drives the *actual* product UI in a headless browser with Playwright — the
+highest-fidelity test there is. It boots the FastAPI server + Streamlit as
+subprocesses, selects the **bedrock** backend, uploads `risk_report.pdf`, then
+**pins one query mode at a time** and asks: a *point-in-time aggregation* for each
+single-PDF mode (`all`/`some tables → text`, `SQL over this PDF`, `raw pdf bytes`)
+and a *temporal, cross-document* question for the whole-corpus mode (over a
+pre-seeded multi-week DuckDB). Every answer is asserted against the golden facts.
+One-time setup, then the run:
+```bash
+pip install -r requirements-dev.txt          # adds playwright + pytest-playwright
+python -m playwright install chromium         # one-time browser download
+# needs AWS Bedrock creds in .env (AWS_ACCESS_KEY_ID/…); the module skips cleanly without them
+pytest -m e2e tests/pdf_insight/e2e/test_ui_chat.py -s
+```
+`-s` streams each mode's `Q:`/`A:` live; a per-mode **token-usage** table (read
+from the UI's token caption, summed across every model call in the turn) plus the
+suite total print in the terminal summary (~27K tokens across 5 turns, ~1 min). On
+Windows PowerShell, invoke via the venv:
+`.venv\Scripts\python.exe -m pytest -m e2e tests\pdf_insight\e2e\test_ui_chat.py -s`.
 
 **Generate test PDFs & build the corpus.** Synthetic, multi-table risk reports
 (Greeks across 4 regions, 16 tables/4 pages) — seeded → deterministic. `tests/pdf_insight/samples/*`

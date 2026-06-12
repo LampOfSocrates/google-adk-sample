@@ -138,7 +138,7 @@ def test_point_in_time_aggregation(chat, record, mode_label, question, check):
     figure comes back through the real UI + Bedrock."""
     answer = chat.choose_mode(mode_label).ask(question)
     ok = check(answer)
-    record(f"point-in-time · {mode_label}", question, answer, chat.last_tokens, ok)
+    record(f"point-in-time / {mode_label}", question, answer, chat.last_tokens, ok)
     assert ok, f"[{mode_label}] unexpected answer:\n{answer}"
 
 
@@ -152,7 +152,7 @@ def test_temporal_across_documents(chat, record, seeded_corpus):
     answer = chat.choose_mode("WHOLE corpus").ask(question)
     hits = [d for d in seeded_corpus["dates"] if d in answer]
     ok = len(hits) >= 2
-    record("temporal · WHOLE corpus", question, answer, chat.last_tokens, ok)
+    record("temporal / WHOLE corpus", question, answer, chat.last_tokens, ok)
     assert ok, (
         f"expected >=2 distinct report dates from {seeded_corpus['dates']}, "
         f"found {hits} in:\n{answer}"

@@ -37,6 +37,14 @@ import pytest
 from scripts.pdf_insight.pdf_to_duckdb import ingest_dir
 from scripts.pdf_insight.weekly_report import generate_for
 
+# Model answers carry Unicode (emoji, ⏱, box chars); the default Windows console is
+# cp1252 and would crash a plain print(). Make our streams tolerant up front.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:  # noqa: BLE001 - captured/older streams may not support it
+        pass
+
 REPO_ROOT = str(Path(__file__).resolve().parents[3])
 FIXTURE_PDF = str(Path(__file__).resolve().parents[1] / "fixtures" / "risk_report.pdf")
 
@@ -78,6 +86,42 @@ def _terminate(proc: subprocess.Popen) -> None:
         proc.wait(timeout=10)
     except subprocess.TimeoutExpired:
         proc.kill()
+
+
+# --------------------------------------------------------- token bookkeeping ---
+# One record per chat turn: {mode, question, tokens, ok, answer}. Filled by the
+# `record` fixture, printed as a per-mode table by pytest_terminal_summary.
+_LEDGER: list[dict] = []
+
+
+@pytest.fixture
+def record():
+    """Log one turn (and echo it live under `-s`) so each mode is visibly working."""
+    def _record(mode: str, question: str, answer: str, tokens: int, ok: bool) -> None:
+        _LEDGER.append({"mode": mode, "question": question, "tokens": tokens,
+                        "ok": ok, "answer": answer})
+        excerpt = re.sub(r"\s+", " ", answer).strip()[:280]
+        try:  # logging must never break a passing assertion
+            print(f"\n--[{mode}]-- {'PASS' if ok else 'FAIL'} | {tokens:,} tokens"
+                  f"\n   Q: {question}\n   A: {excerpt}", flush=True)
+        except Exception:  # noqa: BLE001
+            pass
+    return _record
+
+
+def pytest_terminal_summary(terminalreporter, exitstatus, config) -> None:
+    if not _LEDGER:
+        return
+    tr = terminalreporter
+    tr.write_sep("=", "pdf_insight UI e2e — Bedrock token usage by mode")
+    total = 0
+    for r in _LEDGER:
+        total += r["tokens"]
+        tr.write_line(f"  {('ok ' if r['ok'] else 'FAIL'):<5}"
+                      f"{r['mode']:<34}{r['tokens']:>9,} tokens")
+    tr.write_line("  " + "-" * 48)
+    tr.write_line(f"  {'':<5}{'TOTAL (' + str(len(_LEDGER)) + ' turns)':<34}"
+                  f"{total:>9,} tokens")
 
 
 # --------------------------------------------------------------------- fixtures ---
