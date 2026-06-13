@@ -98,6 +98,7 @@ _LEDGER: list[dict] = []
 def record():
     """Log one turn (and echo it live under `-s`) so each mode is visibly working."""
     def _record(mode: str, question: str, answer: str, tokens: int, ok: bool) -> None:
+        tokens = int(tokens or 0)  # never let None/"" into the ledger -> summary sums it
         _LEDGER.append({"mode": mode, "question": question, "tokens": tokens,
                         "ok": ok, "answer": answer})
         excerpt = re.sub(r"\s+", " ", answer).strip()[:280]
@@ -120,7 +121,7 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config) -> None:
         tr.write_line(f"  {('ok ' if r['ok'] else 'FAIL'):<5}"
                       f"{r['mode']:<34}{r['tokens']:>9,} tokens")
     tr.write_line("  " + "-" * 48)
-    tr.write_line(f"  {'':<5}{'TOTAL (' + str(len(_LEDGER)) + ' turns)':<34}"
+    tr.write_line(f"  {'':<5}{f'TOTAL ({len(_LEDGER)} turns)':<34}"
                   f"{total:>9,} tokens")
 
 
