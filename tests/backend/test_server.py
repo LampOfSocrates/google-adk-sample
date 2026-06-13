@@ -10,7 +10,7 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
-from backend import conversations, overrides, server
+from backend import agent_defs, conversations, overrides, server
 from backend.service import RunnerManager
 
 
@@ -20,6 +20,7 @@ def client(tmp_path, monkeypatch):
     # cached runners / overlay rebuilds don't leak between tests.
     monkeypatch.setattr(conversations, "ROOT", str(tmp_path / "conv"))
     monkeypatch.setattr(overrides, "_DIR", str(tmp_path / "ov"))
+    monkeypatch.setattr(agent_defs, "DB_PATH", str(tmp_path / "agent_defs.duckdb"))
     monkeypatch.setattr(server, "manager", RunnerManager())
     return TestClient(server.app)
 
@@ -78,6 +79,43 @@ def test_overrides_roundtrip_and_apply(client):
 
     assert client.delete(f"/apps/{app}/overrides").json()["ok"] is True
     assert client.get(f"/apps/{app}/overrides").json() == {}
+
+
+def test_agent_definition_read_update_history_restore(client):
+    app, agent = "pdf_insight", "pdf_router"
+
+    # read: no overlay/history yet, but live fields present
+    r0 = client.get("/agent_definition/read",
+                    params={"app": app, "agent": agent, "backend": "mock"}).json()
+    assert r0["live"]["name"] == agent and r0["overlay"] == {} and r0["latest"] is None
+
+    # update v1 -> overlay + history + the rebuilt agent reflects it
+    assert client.post("/agent_definition/update", json={
+        "app": app, "agent": agent, "instruction": "PROMPT v1",
+        "model": "", "description": "desc v1"}).json()["version"] == 1
+    r1 = client.get("/agent_definition/read",
+                    params={"app": app, "agent": agent, "backend": "mock"}).json()
+    assert r1["live"]["instruction"] == "PROMPT v1"          # applied to the live agent
+    assert r1["overlay"]["instruction"] == "PROMPT v1"       # synced into the JSON overlay
+
+    # update v2
+    client.post("/agent_definition/update", json={
+        "app": app, "agent": agent, "instruction": "PROMPT v2",
+        "model": "", "description": "desc v2"})
+    hist = client.get("/agent_definition/history", params={"app": app, "agent": agent}).json()["history"]
+    assert [h["version"] for h in hist] == [2, 1]            # newest first
+
+    # restore v1 -> appends v3 with v1's fields; the live agent is back to v1
+    assert client.post("/agent_definition/restore",
+                       params={"app": app, "agent": agent, "version": 1}).json()["version"] == 3
+    back = client.get("/agent_definition/read",
+                      params={"app": app, "agent": agent, "backend": "mock"}).json()
+    assert back["live"]["instruction"] == "PROMPT v1"
+
+
+def test_agent_definition_unknown_agent_is_404(client):
+    assert client.get("/agent_definition/read",
+                      params={"app": "pdf_insight", "agent": "ghost", "backend": "mock"}).status_code == 404
 
 
 def test_conversations_crud(client):

@@ -30,7 +30,7 @@ from fastapi import FastAPI, File, HTTPException, UploadFile  # noqa: E402
 from fastapi.responses import StreamingResponse  # noqa: E402
 from pydantic import BaseModel  # noqa: E402
 
-from backend import conversations, overrides, registry  # noqa: E402
+from backend import agent_defs, conversations, overrides, registry  # noqa: E402
 from backend.pdf_insight.ingest import ingest_pdf_everywhere  # noqa: E402
 from backend.pdf_insight.stores import SQLiteStore, get_corpus_store  # noqa: E402
 from backend.service import RunnerManager  # noqa: E402
@@ -52,6 +52,14 @@ class CreateSession(BaseModel):
 class Message(BaseModel):
     message: str
     pdf_mode: str | None = None
+
+
+class AgentDefUpdate(BaseModel):
+    app: str
+    agent: str
+    instruction: str | None = None
+    model: str | None = None        # "" clears the pin (follow the Backend selector)
+    description: str | None = None
 
 
 class SaveConversation(BaseModel):
@@ -101,6 +109,66 @@ def delete_overrides(app: str):
     overrides.clear(app)
     manager.rebuild(app)
     return {"ok": True}
+
+
+# --- agent definitions (DuckDB-versioned, per-agent edit + history) ---------
+def _write_agent_def(app: str, agent: str, fields: dict) -> dict:
+    """Append a version to DuckDB AND sync the live JSON overlay, then rebuild so
+    the agent reloads the new fields. Keeps the two stores consistent."""
+    rec = agent_defs.record(app, agent, fields)
+    ov = overrides.load(app)
+    entry = dict(ov.get(agent, {}))
+    for key, val in fields.items():
+        if val:                       # non-empty -> pin it
+            entry[key] = val
+        else:                         # blank -> drop the pin (follow code/backend)
+            entry.pop(key, None)
+    if entry:
+        ov[agent] = entry
+    else:
+        ov.pop(agent, None)
+    overrides.save(app, ov)
+    manager.rebuild(app)
+    return {"ok": True, "version": rec["version"]}
+
+
+@app.get("/agent_definition/read")
+def agent_def_read(app: str, agent: str, backend: str = "mock"):
+    """Current effective fields for one agent (code defaults + live overlay), the
+    live overlay itself, and the most recent stored version."""
+    _require_app(app)
+    live = next((a for a in manager.agents(app, backend)["editable"]
+                 if a["name"] == agent), None)
+    if live is None:
+        raise HTTPException(status_code=404, detail=f"no editable agent {agent!r} in {app}")
+    return {"app": app, "agent": agent, "live": live,
+            "overlay": overrides.load(app).get(agent, {}),
+            "latest": agent_defs.latest(app, agent)}
+
+
+@app.post("/agent_definition/update")
+def agent_def_update(body: AgentDefUpdate):
+    _require_app(body.app)
+    fields = {k: v for k, v in (("instruction", body.instruction),
+                                ("model", body.model),
+                                ("description", body.description)) if v is not None}
+    return _write_agent_def(body.app, body.agent, fields)
+
+
+@app.get("/agent_definition/history")
+def agent_def_history(app: str, agent: str):
+    _require_app(app)
+    return {"history": agent_defs.history(app, agent)}
+
+
+@app.post("/agent_definition/restore")
+def agent_def_restore(app: str, agent: str, version: int):
+    """Re-apply a past version as a new latest entry (history stays append-only)."""
+    _require_app(app)
+    old = agent_defs.get_version(app, agent, version)
+    if old is None:
+        raise HTTPException(status_code=404, detail=f"no version {version} for {agent}")
+    return _write_agent_def(app, agent, {k: old.get(k) for k in agent_defs.FIELDS})
 
 
 # --- sessions + chat -------------------------------------------------------

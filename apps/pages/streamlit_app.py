@@ -3,28 +3,20 @@
     ./local_run.sh server      # start the backend (uvicorn :8000) first
     streamlit run apps/pages/streamlit_app.py
 
-This file holds NO ADK objects and touches NO disk. Everything — running a turn,
-editing agents, conversations, PDF ingest — goes through `api_client` to
-`backend/server.py`. The live turn streams over SSE; this file just draws the
-flat frames (text/thinking/tool/final) it receives. Point at another server with
-the API_BASE_URL env var.
+This file is orchestration only: page setup, the sidebar (app/backend/mode, PDF
+upload, conversations), session management, and tab wiring. The tabs themselves
+live in `ui_chat`, `ui_debug`, `ui_agent`. It holds NO ADK objects and touches NO
+disk — everything goes through `api_client` to `backend/server.py`. Point at
+another server with the API_BASE_URL env var.
 """
 import json
-import os
-import re
-import time
 
-import pandas as pd
 import streamlit as st
-from streamlit_mermaid import st_mermaid
 
-from apps.pages import api_client, render
-
-USER_ID = "you"
+from apps.pages import api_client, ui_agent, ui_chat, ui_debug
 
 # pdf_insight query modes: friendly label -> the mode constant the server passes
-# through to the coordinator. Mirrors backend/pdf_insight/config.py (kept here so
-# the client imports nothing from the backend).
+# through to the coordinator. Mirrors backend/pdf_insight/config.py.
 PDF_MODES = {
     "auto — let the agent decide": "auto",
     "all tables → text": "LLM_GETS_ALL_TABLES_AS_TEXT",
@@ -33,120 +25,6 @@ PDF_MODES = {
     "SQL over the WHOLE corpus (DuckDB)": "LLM_QUERIES_CORPUS",
     "raw pdf bytes (native)": "LLM_GETS_PDF_BYTES",
 }
-
-
-# ----------------------------------------------------------- chat rendering ---
-def _pretty_tool(name: str, args: dict | None) -> str:
-    if name == "transfer_to_agent" and args:
-        return f"Delegating to **{args.get('agent_name', '?')}**"
-    return f"Using **{name}**"
-
-
-_MERMAID_RE = re.compile(r"```mermaid\s*\n?(.*?)```", re.DOTALL)
-
-
-def _render_answer(text: str, key_prefix: str) -> None:
-    """Render assistant text, drawing any ```mermaid fenced blocks as diagrams."""
-    pos, n, matched = 0, 0, False
-    for m in _MERMAID_RE.finditer(text):
-        matched = True
-        before = text[pos:m.start()].strip()
-        if before and not (before.startswith("{") and before.endswith("}")):
-            st.markdown(before)
-        diagram = m.group(1).strip()
-        height = f"{min(900, max(280, (diagram.count(chr(10)) + 1) * 46))}px"
-        st_mermaid(diagram, height=height, key=f"{key_prefix}-mmd{n}")
-        pos, n = m.end(), n + 1
-    if not matched:
-        st.markdown(text)
-    elif text[pos:].strip():
-        st.markdown(text[pos:])
-
-
-_SQL_TOOLS = ("run_sql", "run_corpus_sql")
-
-
-def _to_number(v):
-    if isinstance(v, bool):
-        return None
-    if isinstance(v, (int, float)):
-        return float(v)
-    if isinstance(v, str):
-        s = v.replace(",", "").replace("%", "").strip()
-        if s in ("", "-", "—", "n/a", "N/A"):
-            return None
-        try:
-            return float(s)
-        except ValueError:
-            return None
-    return None
-
-
-def _numeric_columns(columns: list[str], rows: list[list]) -> list[str]:
-    numeric = []
-    for i, col in enumerate(columns):
-        vals = [r[i] for r in rows if i < len(r) and r[i] not in (None, "")]
-        if vals and all(_to_number(v) is not None for v in vals):
-            numeric.append(col)
-    return numeric
-
-
-def _sql_result_payload(tool_result) -> dict | None:
-    r = tool_result
-    if isinstance(r, dict) and "columns" not in r and isinstance(r.get("result"), dict):
-        r = r["result"]
-    if (isinstance(r, dict) and r.get("status") == "success"
-            and r.get("columns") and r.get("rows")):
-        return {"columns": list(r["columns"]), "rows": [list(row) for row in r["rows"]]}
-    return None
-
-
-def _render_sql_results(results: list[dict]) -> None:
-    for res in results:
-        columns, rows = res["columns"], res["rows"]
-        st.caption(f"📊 `{res['tool_name']}` — {len(rows)} row(s)")
-        st.dataframe([dict(zip(columns, r)) for r in rows], width="stretch", hide_index=True)
-        if len(rows) < 2:
-            continue
-        numeric = _numeric_columns(columns, rows)
-        date_col = next((c for c in columns if c.lower() == "report_date" and c not in numeric), None)
-        measures = [c for c in numeric if c != date_col]
-        if not measures:
-            continue
-        frame = {c: ([_to_number(r[i]) if i < len(r) else None for r in rows] if c in numeric
-                     else [r[i] if i < len(r) else None for r in rows])
-                 for i, c in enumerate(columns)}
-        df = pd.DataFrame(frame)
-        if date_col:
-            st.line_chart(df.sort_values(date_col), x=date_col, y=measures)
-        else:
-            category = next((c for c in columns if c not in numeric), None)
-            if category:
-                st.bar_chart(df, x=category, y=measures)
-            else:
-                st.bar_chart(df[measures])
-
-
-def _meta_caption(latency, usage) -> str:
-    parts = []
-    if latency is not None:
-        parts.append(f"⏱ {latency:.1f}s")
-    total = (usage or {}).get("total", 0)
-    parts.append(f"{total:,} tokens" if total else "tokens n/a")
-    return " · ".join(parts)
-
-
-def _render_steps(steps: list[dict]) -> None:
-    for s in steps:
-        if s["kind"] == "thinking":
-            st.markdown(s["text"])
-        elif s["kind"] == "tool_call":
-            st.markdown(f"🔧 {_pretty_tool(s['tool_name'], s['tool_args'])}")
-            if s["tool_args"]:
-                st.json(s["tool_args"])
-        elif s["kind"] == "tool_result":
-            st.markdown(f"↳ **{s['tool_name']}** returned")
-            st.json(s["tool_result"])
 
 
 # --------------------------------------------------------------- session ----
@@ -322,121 +200,24 @@ session_id = _ensure_session(app, chosen)
 
 # Pinned to the bottom of the viewport; history scrolls above.
 prompt = st.chat_input("Message…")
+pdf_mode = PDF_MODES.get(pdf_mode_label) if pdf_mode_label else None
 
 tab_chat, tab_debug, tab_agents = st.tabs(["💬 Chat", "🔍 Debug", "🛠️ Agents"])
 
 with tab_chat:
-    if app == "pdf_insight":
-        with st.expander("📄 What's queryable", expanded=False):
-            try:
-                schema = api_client.pdf_schema()
-            except Exception as e:  # noqa: BLE001
-                schema = None
-                st.caption(f"schema unavailable: {e}")
-            if schema:
-                active = schema.get("active_pdf")
-                st.caption(f"Active PDF: **{os.path.basename(active)}**" if active
-                           else "No PDF uploaded yet — upload one in the sidebar.")
-                corpus = schema.get("corpus") or {}
-                if corpus.get("status") == "success":
-                    docs = corpus["documents"]
-                    st.markdown(f"**Corpus** — {docs['count']} report(s), {docs['from']} → {docs['to']}")
-                    st.dataframe([{"table": t["table"], "title": t["title"],
-                                   "columns": ", ".join(t["columns"])} for t in corpus["tables"]],
-                                 width="stretch", hide_index=True)
-                sqlite = schema.get("sqlite")
-                if sqlite and sqlite.get("status") == "success":
-                    st.markdown("**This PDF (SQLite)** — " + ", ".join(t["table"] for t in sqlite["schema"]))
+    ui_chat.render_chat_tab(app, session_id, pdf_mode, prompt)
 
-    for i, m in enumerate(st.session_state.get("messages", [])):
-        with st.chat_message(m["role"]):
-            if m["role"] == "assistant":
-                if m.get("steps"):
-                    with st.expander("💭 Thinking", expanded=False):
-                        _render_steps(m["steps"])
-                _render_answer(m["content"], key_prefix=f"hist{i}")
-                if m.get("sql_results"):
-                    _render_sql_results(m["sql_results"])
-                if m.get("latency") is not None or m.get("usage"):
-                    st.caption(_meta_caption(m.get("latency"), m.get("usage")))
-            else:
-                st.markdown(m["content"])
-
-    if prompt:
-        st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"):
-            st.markdown(prompt)
-
-        with st.chat_message("assistant"):
-            status = st.status("Thinking…", expanded=False)
-            answer_box = st.empty()
-            answer, steps, usage = "", [], None
-            sql_results, debug_snaps, session_info = [], [], {}
-            t_start = time.perf_counter()
-
-            pdf_mode = PDF_MODES.get(pdf_mode_label) if pdf_mode_label else None
-            try:
-                for fr in api_client.stream_message(app, session_id, prompt, pdf_mode):
-                    kind = fr["kind"]
-                    if kind == "thinking_delta":
-                        steps.append({"kind": "thinking", "text": fr["text"]})
-                        status.markdown(fr["text"])
-                    elif kind == "tool_call":
-                        status.update(label=f"{_pretty_tool(fr['tool_name'], fr['tool_args'])}…")
-                        steps.append({"kind": "tool_call", "tool_name": fr["tool_name"],
-                                      "tool_args": fr["tool_args"]})
-                        status.markdown(f"🔧 {_pretty_tool(fr['tool_name'], fr['tool_args'])}")
-                        if fr["tool_args"]:
-                            status.json(fr["tool_args"])
-                    elif kind == "tool_result":
-                        steps.append({"kind": "tool_result", "tool_name": fr["tool_name"],
-                                      "tool_result": fr["tool_result"]})
-                        if fr["tool_name"] in _SQL_TOOLS:
-                            payload = _sql_result_payload(fr["tool_result"])
-                            if payload:
-                                sql_results.append({"tool_name": fr["tool_name"], **payload})
-                        status.markdown(f"↳ **{fr['tool_name']}** returned")
-                        status.json(fr["tool_result"])
-                    elif kind == "text_delta":
-                        status.update(label="Responding…")
-                        answer += fr["text"]
-                        answer_box.markdown(answer + " ▌")
-                    elif kind == "error":
-                        status.update(label="Error", state="error")
-                        st.error(fr["text"])
-                    elif kind == "final":
-                        usage = fr.get("usage")
-                        session_info = fr.get("session_info", {})
-                        debug_snaps = fr.get("debug_snapshots", [])
-            except Exception as e:  # noqa: BLE001 - surface transport errors in-chat
-                status.update(label="Error", state="error")
-                st.error(f"{type(e).__name__}: {e}")
-
-            latency = time.perf_counter() - t_start
-            status.update(label="Done" if answer else "Done (no text reply)",
-                          state="complete", expanded=False)
-            answer_box.empty()
-            _render_answer(answer, key_prefix=f"turn{len(st.session_state.messages)}")
-            if sql_results:
-                _render_sql_results(sql_results)
-            st.caption(_meta_caption(latency, usage))
-
-        st.session_state.messages.append(
-            {"role": "assistant", "content": answer, "steps": steps,
-             "sql_results": sql_results, "latency": latency, "usage": usage})
-        st.session_state.debug_turns.append(
-            {"prompt": prompt, "snapshots": debug_snaps, "latency": latency, "session": session_info})
-
-        # Per-turn save insurance once the conversation is named.
-        if st.session_state.get("conv_id"):
-            api_client.save_conversation(_save_payload(app, chosen, pdf_mode_label))
-            st.session_state["_autosave_hash"] = _msgs_hash(st.session_state.messages)
+# Per-turn save insurance once the conversation is named (the turn just landed in
+# session_state during the chat render above).
+if prompt and st.session_state.get("conv_id"):
+    api_client.save_conversation(_save_payload(app, chosen, pdf_mode_label))
+    st.session_state["_autosave_hash"] = _msgs_hash(st.session_state.messages)
 
 with tab_debug:
-    render.render_debug_tab(st.session_state.get("debug_turns", []),
-                            st.session_state.get("agents_mermaid"))
+    ui_debug.render_debug_tab(st.session_state.get("debug_turns", []),
+                              st.session_state.get("agents_mermaid"))
 
 with tab_agents:
-    render.render_agents_tab(app, chosen, _on_agents_rebuilt)
+    ui_agent.render_agents_tab(app, chosen, _on_agents_rebuilt)
 
 _autosave_tick()

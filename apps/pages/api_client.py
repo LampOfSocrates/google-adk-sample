@@ -54,6 +54,33 @@ def delete_overrides(app: str) -> dict:
         return c.delete(f"/apps/{app}/overrides").json()
 
 
+# --- agent definitions (per-agent edit + DuckDB history) -------------------
+def read_agent_def(app: str, agent: str, backend: str) -> dict:
+    with _client() as c:
+        return c.get("/agent_definition/read",
+                     params={"app": app, "agent": agent, "backend": backend}).json()
+
+
+def update_agent_def(app: str, agent: str, instruction: str | None,
+                     model: str | None, description: str | None) -> dict:
+    with _client() as c:
+        return c.post("/agent_definition/update", json={
+            "app": app, "agent": agent, "instruction": instruction,
+            "model": model, "description": description}).json()
+
+
+def agent_def_history(app: str, agent: str) -> list[dict]:
+    with _client() as c:
+        return c.get("/agent_definition/history",
+                     params={"app": app, "agent": agent}).json()["history"]
+
+
+def restore_agent_def(app: str, agent: str, version: int) -> dict:
+    with _client() as c:
+        return c.post("/agent_definition/restore",
+                      params={"app": app, "agent": agent, "version": version}).json()
+
+
 # --- sessions / chat -------------------------------------------------------
 def create_session(app: str, backend: str) -> str:
     with _client() as c:

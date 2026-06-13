@@ -35,6 +35,7 @@ SENTINEL.sqlite
 # ADK DatabaseSessionService sqlite files (examples/durable_adk_chat_service.py)
 *.db
 data/uploads/
-# Runtime UI state (Streamlit): saved chats + per-agent prompt/model overlays
+# Runtime UI state (Streamlit): saved chats + per-agent prompt/model overlays + history
 data/conversations/
 data/agent_overrides/
+data/agent_definitions.duckdb

@@ -139,6 +139,10 @@ def apply(root_agent, overrides: dict) -> list[str]:
         if model:
             ag.model = model
             touched = True
+        desc = ov.get("description")
+        if isinstance(desc, str) and hasattr(ag, "description"):
+            ag.description = desc
+            touched = True
         if touched:
             applied.append(ag.name)
     return applied

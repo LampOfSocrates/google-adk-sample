@@ -1,9 +1,7 @@
-"""Client-side renderers — draw server JSON with Streamlit widgets.
+"""Debug tab — renders the raw-event snapshot dicts from each turn's `final` frame.
 
-No ADK, no disk: the Debug tab renders raw-event snapshot *dicts* that arrive in
-each turn's `final` frame, and the Agents tab renders the server's editable-agent
-list, writing edits back through the API. (The logic these used to call lives in
-backend/events.py + backend/overrides.py now.)
+No ADK, no disk: the snapshots arrive over the wire as plain dicts; this just draws
+them (plus the agent-tree mermaid the server hands back).
 """
 from __future__ import annotations
 
@@ -11,8 +9,6 @@ import json
 
 import streamlit as st
 from streamlit_mermaid import st_mermaid
-
-from apps.pages import api_client
 
 _FLOW_ICON = {"thinking": "💭", "tool_call": "🔧", "tool_result": "↳", "text": "💬"}
 _KIND_BADGE = {"thinking": "💭 thinking", "tool_call": "🔧 tool_call",
@@ -51,7 +47,6 @@ def _events_by_author(snaps: list[dict]) -> dict:
     return out
 
 
-# ------------------------------------------------------------------ debug ---
 def render_debug_tab(turns: list[dict], mermaid: str | None) -> None:
     """`turns`: [{prompt, snapshots:[snapshot dict], latency, session}]. `mermaid`:
     the agent-tree flowchart string from the server (or None)."""
@@ -124,72 +119,3 @@ def render_debug_tab(turns: list[dict], mermaid: str | None) -> None:
                     st.markdown(f"_{p['kind']}_: {p.get('text')}")
             with st.popover("raw event JSON"):
                 st.json(s.get("raw"))
-
-
-# ----------------------------------------------------------------- agents ---
-def render_agents_tab(app: str, backend_name: str, on_rebuilt) -> None:
-    """Edit each agent's prompt/model via the server. Save → PUT overrides;
-    Reset → DELETE. Both rebuild the agent server-side, so we call `on_rebuilt()`
-    to refresh the session, then rerun."""
-    try:
-        data = api_client.get_agents(app, backend_name)
-    except Exception as e:  # noqa: BLE001
-        st.error(f"Couldn't reach the server: {e}")
-        return
-    editable = data.get("editable", [])
-    saved = api_client.get_overrides(app)
-    if not editable:
-        st.info("This app's agents expose no editable prompt or model.")
-        return
-
-    overlaid = sum(1 for a in editable if a["name"] in saved)
-    st.caption(f"Editing **{app}** · backend **{backend_name}** · "
-               f"{len(editable)} agent(s), {overlaid} overlaid. "
-               "Saving recreates the agents from the overlay — your conversation is kept.")
-
-    with st.form(f"agents::{app}"):
-        fields = {}
-        for ag in editable:
-            name = ag["name"]
-            st.markdown(f"### 🧠 {name} · `{ag['type']}`")
-            if ag.get("description"):
-                st.caption(ag["description"])
-            model_val = st.text_input(
-                "Model override", value=saved.get(name, {}).get("model", ""),
-                placeholder=f"default: {ag.get('model') or '—'} (follows Backend)",
-                key=f"model::{app}::{name}",
-                help="A concrete model id pins this agent; blank follows the Backend selector.")
-            instr = ag.get("instruction")
-            if instr is not None:
-                instr_val = st.text_area("Instruction (system prompt)", value=instr,
-                                         key=f"instr::{app}::{name}", height=180)
-            else:
-                instr_val = None
-                st.caption("_Structural agent — no editable prompt._")
-            fields[name] = (model_val, instr_val, instr)
-            st.divider()
-        c1, c2 = st.columns(2)
-        save = c1.form_submit_button("💾 Save & apply", width="stretch", type="primary")
-        reset = c2.form_submit_button("↩️ Reset to code defaults", width="stretch")
-
-    if save:
-        new = dict(saved)
-        for name, (model_val, instr_val, live_instr) in fields.items():
-            entry = dict(saved.get(name, {}))
-            if instr_val is not None and instr_val != live_instr:
-                entry["instruction"] = instr_val
-            if model_val.strip():
-                entry["model"] = model_val.strip()
-            else:
-                entry.pop("model", None)
-            if entry:
-                new[name] = entry
-            else:
-                new.pop(name, None)
-        api_client.put_overrides(app, new)
-        on_rebuilt()
-        st.rerun()
-    if reset:
-        api_client.delete_overrides(app)
-        on_rebuilt()
-        st.rerun()
