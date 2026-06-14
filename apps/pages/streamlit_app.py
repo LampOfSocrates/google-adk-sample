@@ -33,7 +33,11 @@ def _ensure_session(app: str, backend: str) -> str:
     A fresh session clears the transcript unless `_keep_history` is set (agent
     edits / conversation loads keep it)."""
     ss = st.session_state
+    ss.setdefault("messages", [])
+    ss.setdefault("debug_turns", [])
     if ss.get("app") == app and ss.get("backend") == backend and ss.get("session_id"):
+        if not ss.get("agents_mermaid"):  # backfill if a prior fetch failed
+            ss["agents_mermaid"] = api_client.get_agents(app, backend).get("mermaid")
         return ss["session_id"]
     sid = api_client.create_session(app, backend)
     keep = ss.pop("_keep_history", False)
