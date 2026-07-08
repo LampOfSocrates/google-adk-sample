@@ -8,6 +8,7 @@ no disk — all over the API. `on_rebuilt()` refreshes the session after a chang
 from __future__ import annotations
 
 import streamlit as st
+from streamlit_mermaid import st_mermaid
 
 from apps.pages import api_client
 
@@ -16,12 +17,28 @@ def _excerpt(text: str | None, n: int = 90) -> str:
     return (text or "").replace("\n", " ").strip()[:n] or "—"
 
 
+def _count_nodes(node: dict) -> int:
+    return 1 + sum(_count_nodes(c) for c in node.get("children", []))
+
+
 def render_agents_tab(app: str, backend_name: str, on_rebuilt) -> None:
     try:
-        editable = api_client.get_agents(app, backend_name).get("editable", [])
+        data = api_client.get_agents(app, backend_name)
     except Exception as e:  # noqa: BLE001
         st.error(f"Couldn't reach the server: {e}")
         return
+    editable = data.get("editable", [])
+    mermaid, tree = data.get("mermaid"), data.get("tree")
+
+    # --- agent tree: every agent and the tools it can reach -----------------
+    if mermaid:
+        st.subheader("Agent tree")
+        st.caption("🧠 agent · 🔧 tool · edges: **transfer** (hand control to a "
+                   "sub-agent) vs **call** (invoke an agent-tool and keep control).")
+        height = max(240, min(_count_nodes(tree) * 70, 900)) if tree else 320
+        st_mermaid(mermaid, height=f"{height}px", key=f"agent-tree::{app}")
+        st.divider()
+
     if not editable:
         st.info("This app's agents expose no editable prompt or model.")
         return
