@@ -23,6 +23,10 @@ def _count_nodes(node: dict) -> int:
     return 1 + sum(_count_nodes(c) for c in node.get("children", []))
 
 
+def _tree_depth(node: dict) -> int:
+    return 1 + max((_tree_depth(c) for c in node.get("children") or []), default=0)
+
+
 def _agent_details_map(tree: dict) -> dict:
     """name -> {model, description, tools, connects} for every agent in the tree,
     so the diagram can show details for a clicked node without a server round-trip."""
@@ -122,7 +126,7 @@ def _zoomable_agent_tree(mermaid_code: str, details: dict, height: int) -> None:
             .replace("__HEIGHT__", str(int(height)))
             .replace("__DETAILS__", json.dumps(details))
             .replace("__CODE__", json.dumps(mermaid_code)))
-    components.html(html, height=int(height) + 24, scrolling=False)
+    components.html(html, height=int(height) + 8, scrolling=False)
 
 
 # Windows-Explorer-style tree: indented rows, ▸ expand/collapse chevrons, 🧠/🔧 icons,
@@ -188,7 +192,7 @@ def _explorer_tree(tree: dict, height: int) -> None:
     html = (_EXPLORER_HTML
             .replace("__HEIGHT__", str(int(height)))
             .replace("__TREE__", json.dumps(tree)))
-    components.html(html, height=int(height) + 24, scrolling=False)
+    components.html(html, height=int(height) + 8, scrolling=False)
 
 
 def render_agents_tab(app: str, backend_name: str, on_rebuilt) -> None:
@@ -211,11 +215,11 @@ def render_agents_tab(app: str, backend_name: str, on_rebuilt) -> None:
                        "**call** (invoke an agent-tool, keep control). "
                        "Scroll to zoom, drag to pan, click an agent to inspect it.")
             _zoomable_agent_tree(mermaid, _agent_details_map(tree),
-                                 max(300, min(_count_nodes(tree) * 70, 820)))
+                                 min(700, max(220, _tree_depth(tree) * 95 + 30)))
         else:
             st.caption("Explorer-style tree — ▸ to expand/collapse, click a row to "
                        "inspect an agent and the tools it can access.")
-            _explorer_tree(tree, max(300, min(_count_nodes(tree) * 40, 820)))
+            _explorer_tree(tree, min(820, max(120, _count_nodes(tree) * 26 + 20)))
         st.divider()
 
     if not editable:
