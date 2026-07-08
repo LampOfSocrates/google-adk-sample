@@ -110,7 +110,7 @@ def _on_agents_rebuilt() -> None:
 
 
 # ---------------------------------------------------------------- page setup ---
-st.set_page_config(page_title="ADK Chat", page_icon="🤖", layout="centered")
+st.set_page_config(page_title="ADK Chat", page_icon="🤖", layout="wide")
 
 if not api_client.health():
     st.error(f"Can't reach the agent server at `{api_client.BASE_URL}`. "
