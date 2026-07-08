@@ -20,4 +20,4 @@ RUN chmod +x deploy/docker-entrypoint.sh
 # Only Streamlit is exposed; uvicorn stays on localhost:8000 inside the container.
 EXPOSE 8501
 
-ENTRYPOINT ["deploy/docker-entrypoint.sh"]
+ENTRYPOINT ["/app/deploy/docker-entrypoint.sh"]
