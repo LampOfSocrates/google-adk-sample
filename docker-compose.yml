@@ -1,0 +1,31 @@
+# Co-hosts the ADK agents alongside the box's existing apps.
+#
+# The memory caps are the SAFETY BELT: this box is ~916 MB total with other
+# (un-containerized) apps already using ~300 MB. mem_limit keeps this container
+# from starving them; memswap_limit lets it overflow to the swapfile instead of
+# triggering the OOM killer. Run deploy/setup-swap.sh on the host FIRST.
+services:
+  adk-agents:
+    build: .
+    image: adk-agents:latest
+    container_name: adk-agents
+    restart: unless-stopped
+    env_file:
+      - .env                       # GOOGLE_API_KEY etc. — must exist on the host, gitignored
+    environment:
+      LLM_BACKEND: ${LLM_BACKEND:-gemini}
+      PDF_DATA_DIR: /app/data
+    ports:
+      - "8501:8501"                # change the LEFT number if 8501 is taken on the host
+    volumes:
+      - adk_data:/app/data         # uploads / corpus / conversations survive redeploys
+    mem_limit: 500m                # hard RAM cap — protects the existing apps
+    memswap_limit: 1500m           # allow ~1 GB swap overflow (needs the swapfile)
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8501/_stcore/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  adk_data:

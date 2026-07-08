@@ -1,0 +1,13 @@
+.venv/
+.git/
+__pycache__/
+**/__pycache__/
+*.pyc
+.pytest_cache/
+.coverage
+data/
+tests/
+streamlit.run.log
+*.duckdb
+*.sqlite
+.env
