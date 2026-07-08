@@ -7,8 +7,10 @@ no disk — all over the API. `on_rebuilt()` refreshes the session after a chang
 """
 from __future__ import annotations
 
+import json
+
 import streamlit as st
-from streamlit_mermaid import st_mermaid
+import streamlit.components.v1 as components
 
 from apps.pages import api_client
 
@@ -19,6 +21,108 @@ def _excerpt(text: str | None, n: int = 90) -> str:
 
 def _count_nodes(node: dict) -> int:
     return 1 + sum(_count_nodes(c) for c in node.get("children", []))
+
+
+def _agent_details_map(tree: dict) -> dict:
+    """name -> {model, description, tools, connects} for every agent in the tree,
+    so the diagram can show details for a clicked node without a server round-trip."""
+    out: dict = {}
+
+    def walk(node: dict) -> None:
+        if node.get("kind") == "agent":
+            out.setdefault(node["name"], {
+                "model": node.get("model"),
+                "description": node.get("description"),
+                "tools": [c["name"] for c in node["children"] if c.get("kind") == "tool"],
+                "connects": [
+                    {"name": c["name"],
+                     "rel": "call" if "AgentTool" in (c.get("relation") or "") else "transfer"}
+                    for c in node["children"] if c.get("kind") == "agent"
+                ],
+            })
+        for c in node.get("children", []):
+            walk(c)
+
+    walk(tree)
+    return out
+
+
+# Zoomable + clickable agent tree. mermaid renders the server's flowchart; svg-pan-zoom
+# adds wheel-zoom / drag-pan; a near-stationary mouseup on a node (i.e. a click, not a
+# pan) opens its detail panel from the DETAILS map. Self-contained — no Streamlit callback.
+_TREE_HTML = """
+<!DOCTYPE html><html><head><meta charset="utf-8">
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/svg-pan-zoom@3.6.1/dist/svg-pan-zoom.min.js"></script>
+<style>
+  *{box-sizing:border-box} body{margin:0;font-family:"Source Sans Pro",system-ui,sans-serif;color:#fafafa}
+  #wrap{display:flex;gap:8px;height:__HEIGHT__px}
+  #stage{position:relative;flex:2 1 0;border:1px solid #30363d;border-radius:10px;background:#0e1117;overflow:hidden}
+  #diagram,#diagram svg{width:100%;height:100%}
+  #controls{position:absolute;top:8px;right:8px;z-index:5;display:flex;gap:4px}
+  #controls button{background:#21262d;color:#fafafa;border:1px solid #30363d;border-radius:6px;width:30px;height:30px;cursor:pointer;font-size:15px}
+  #controls button:hover{background:#30363d}
+  #panel{flex:1 1 0;min-width:180px;max-width:320px;border:1px solid #30363d;border-radius:10px;background:#0e1117;padding:12px;overflow:auto;font-size:13px}
+  #panel .title{font-size:15px;font-weight:600}
+  #panel .tag{display:inline-block;background:#1f6feb33;color:#79c0ff;border-radius:5px;padding:1px 6px;font-size:11px;margin-left:4px}
+  #panel .dim{color:#8b949e}
+  #panel .sec{margin-top:10px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#8b949e}
+  #panel ul{margin:4px 0 0;padding-left:18px} #panel li{margin:2px 0}
+  .node{cursor:pointer} .node.sel>*:first-child{stroke:#f0b429 !important;stroke-width:3px !important}
+</style></head><body>
+<div id="wrap">
+  <div id="stage">
+    <div id="controls">
+      <button title="Zoom in" onclick="_zi()">+</button>
+      <button title="Zoom out" onclick="_zo()">-</button>
+      <button title="Reset view" onclick="_rv()">&#8635;</button>
+    </div>
+    <div id="diagram"></div>
+  </div>
+  <div id="panel"><span class="dim">Click an agent to inspect it &mdash; its model, description, and the tools it can access.</span></div>
+</div>
+<script>
+  const DETAILS=__DETAILS__, CODE=__CODE__; let PZ=null, downXY=null;
+  function esc(s){return (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+  function _zi(){PZ&&PZ.zoomBy(1.3)} function _zo(){PZ&&PZ.zoomBy(1/1.3)} function _rv(){if(PZ){PZ.resetZoom();PZ.center();PZ.fit()}}
+  function show(name,el){
+    document.querySelectorAll('.node.sel').forEach(n=>n.classList.remove('sel'));
+    if(el)el.classList.add('sel');
+    const info=DETAILS[name], p=document.getElementById('panel');
+    if(!info){p.innerHTML='<div class="title">&#128295; '+esc(name)+'</div><div class="sec">Tool</div><span class="dim">A capability an agent can call.</span>';return;}
+    let h='<div class="title">&#129504; '+esc(name)+(info.model?'<span class="tag">'+esc(info.model)+'</span>':'')+'</div>';
+    if(info.description)h+='<p class="dim">'+esc(info.description)+'</p>';
+    h+='<div class="sec">Tools it can access</div>';
+    h+=info.tools.length?'<ul>'+info.tools.map(t=>'<li>&#128295; '+esc(t)+'</li>').join('')+'</ul>':'<span class="dim">none</span>';
+    if(info.connects.length)h+='<div class="sec">Connects to agents</div><ul>'+info.connects.map(c=>'<li>&#129504; '+esc(c.name)+' <span class="tag">'+esc(c.rel)+'</span></li>').join('')+'</ul>';
+    p.innerHTML=h;
+  }
+  (async()=>{
+    mermaid.initialize({startOnLoad:false,theme:'dark',securityLevel:'loose'});
+    const d=document.getElementById('diagram');
+    const {svg}=await mermaid.render('agenttree',CODE);
+    d.innerHTML=svg;
+    const s=d.querySelector('svg'); s.setAttribute('width','100%'); s.setAttribute('height','100%'); s.style.maxWidth='none';
+    PZ=svgPanZoom(s,{controlIconsEnabled:false,fit:true,center:true,minZoom:0.2,maxZoom:20,zoomScaleSensitivity:0.3});
+    d.addEventListener('mousedown',e=>{downXY=[e.clientX,e.clientY]});
+    d.querySelectorAll('.node').forEach(n=>{
+      n.addEventListener('mouseup',e=>{
+        if(!downXY)return;
+        if(Math.hypot(e.clientX-downXY[0],e.clientY-downXY[1])<5)
+          show((n.textContent||'').replace(/[\\u{1F9E0}\\u{1F527}]/gu,'').trim(),n);
+      });
+    });
+  })();
+</script></body></html>
+"""
+
+
+def _zoomable_agent_tree(mermaid_code: str, details: dict, height: int) -> None:
+    html = (_TREE_HTML
+            .replace("__HEIGHT__", str(int(height)))
+            .replace("__DETAILS__", json.dumps(details))
+            .replace("__CODE__", json.dumps(mermaid_code)))
+    components.html(html, height=int(height) + 24, scrolling=False)
 
 
 def render_agents_tab(app: str, backend_name: str, on_rebuilt) -> None:
@@ -33,10 +137,11 @@ def render_agents_tab(app: str, backend_name: str, on_rebuilt) -> None:
     # --- agent tree: every agent and the tools it can reach -----------------
     if mermaid:
         st.subheader("Agent tree")
-        st.caption("🧠 agent · 🔧 tool · edges: **transfer** (hand control to a "
-                   "sub-agent) vs **call** (invoke an agent-tool and keep control).")
-        height = max(240, min(_count_nodes(tree) * 70, 900)) if tree else 320
-        st_mermaid(mermaid, height=f"{height}px", key=f"agent-tree::{app}")
+        st.caption("🧠 agent · 🔧 tool · **transfer** (hand off to a sub-agent) vs "
+                   "**call** (invoke an agent-tool, keep control). "
+                   "Scroll to zoom, drag to pan, click an agent to inspect it.")
+        height = max(300, min(_count_nodes(tree) * 70, 820)) if tree else 360
+        _zoomable_agent_tree(mermaid, _agent_details_map(tree or {}), height)
         st.divider()
 
     if not editable:
