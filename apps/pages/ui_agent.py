@@ -222,6 +222,7 @@ def render_agents_tab(app: str, backend_name: str, on_rebuilt) -> None:
         st.info("This app's agents expose no editable prompt or model.")
         return
 
+    st.subheader("Edit agent definition")
     names = [a["name"] for a in editable]
     agent = st.selectbox(f"Agent in **{app}** (backend **{backend_name}**)", names,
                          key=f"agent_sel::{app}")
@@ -230,6 +231,10 @@ def render_agents_tab(app: str, backend_name: str, on_rebuilt) -> None:
     pinned = [f for f in ("instruction", "model", "description") if f in overlay]
     st.caption(f"`{live.get('type', '?')}` · "
                + (f"overridden: {', '.join(pinned)}" if pinned else "all code defaults"))
+    sel = (_agent_details_map(tree) if tree else {}).get(agent)
+    if sel is not None:
+        st.caption("🔧 Tools it can access: "
+                   + (", ".join(f"`{t}`" for t in sel["tools"]) if sel["tools"] else "—"))
 
     # --- edit ---------------------------------------------------------------
     with st.form(f"agent::{app}::{agent}"):
