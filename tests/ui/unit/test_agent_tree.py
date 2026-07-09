@@ -16,17 +16,21 @@ from apps.pages import ui_agent
 #             --call-----> search_agent   -> (web_search)
 TREE = {
     "kind": "agent", "name": "coordinator", "model": "gemini-2.5-flash",
-    "description": "routes requests", "children": [
+    "description": "routes requests",
+    "instruction": "You are the coordinator. Route every request.", "children": [
         {"kind": "agent", "name": "weather_agent", "model": "gemini-2.5-flash",
-         "description": "weather specialist", "relation": "sub_agent (transfer)",
-         "children": [
-             {"kind": "tool", "name": "get_weather", "children": []},
-             {"kind": "tool", "name": "set_preferred_units", "children": []},
+         "description": "weather specialist", "instruction": "Answer weather questions.",
+         "relation": "sub_agent (transfer)", "children": [
+             {"kind": "tool", "name": "get_weather",
+              "description": "Return the weather for a city.", "children": []},
+             {"kind": "tool", "name": "set_preferred_units",
+              "description": "Store the unit preference.", "children": []},
          ]},
         {"kind": "agent", "name": "search_agent", "model": None,
-         "description": "web search", "relation": "AgentTool (call)",
-         "children": [
-             {"kind": "tool", "name": "web_search", "children": []},
+         "description": "web search", "instruction": "Search the web.",
+         "relation": "AgentTool (call)", "children": [
+             {"kind": "tool", "name": "web_search",
+              "description": "Search the web offline.", "children": []},
          ]},
     ],
 }
@@ -104,21 +108,27 @@ def capture_html(monkeypatch):
 def test_explorer_tree_substitutes_and_embeds(capture_html):
     ui_agent._explorer_tree(TREE, 200)
     html = capture_html["html"]
-    assert "__TREE__" not in html and "__HEIGHT__" not in html
+    assert not any(p in html for p in
+                   ("__TREE__", "__HEIGHT__", "__DETAILJS__", "__PANEL_CSS__"))
     assert "coordinator" in html and "get_weather" in html
+    assert "Return the weather for a city." in html  # tool docstring embedded
     assert capture_html["height"] == 208  # height + 8 iframe slack
 
 
 def test_zoomable_tree_substitutes_and_embeds(capture_html):
-    dm = ui_agent._agent_details_map(TREE)
-    ui_agent._zoomable_agent_tree("flowchart TD\n  n1", dm, 300)
+    ui_agent._zoomable_agent_tree("flowchart TD\n  n1", TREE, 300)
     html = capture_html["html"]
-    assert not any(p in html for p in ("__CODE__", "__DETAILS__", "__HEIGHT__"))
+    assert not any(p in html for p in
+                   ("__CODE__", "__TREE__", "__HEIGHT__", "__DETAILJS__", "__PANEL_CSS__"))
     assert "flowchart TD" in html and "weather_agent" in html
+    assert "You are the coordinator" in html  # system prompt embedded
     assert capture_html["height"] == 308
 
 
 def test_templates_carry_their_placeholders():
     # guards against a future edit dropping a placeholder the helper relies on
-    assert all(p in ui_agent._TREE_HTML for p in ("__HEIGHT__", "__DETAILS__", "__CODE__"))
-    assert all(p in ui_agent._EXPLORER_HTML for p in ("__HEIGHT__", "__TREE__"))
+    assert all(p in ui_agent._TREE_HTML
+               for p in ("__HEIGHT__", "__CODE__", "__TREE__", "__DETAILJS__", "__PANEL_CSS__"))
+    assert all(p in ui_agent._EXPLORER_HTML
+               for p in ("__HEIGHT__", "__TREE__", "__DETAILJS__", "__PANEL_CSS__"))
+    assert "renderDetail" in ui_agent._DETAIL_JS

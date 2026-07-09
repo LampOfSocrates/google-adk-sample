@@ -119,6 +119,18 @@ def _model_label(model) -> str | None:
     return inner if isinstance(inner, str) else type(model).__name__
 
 
+def _tool_description(tool) -> str | None:
+    """Verbose 'what it does' for a tool: ADK's `tool.description`, else the
+    wrapped/raw callable's docstring. This is the code documentation surfaced in
+    the Agents-tab detail panel, so richer docstrings = richer descriptions."""
+    d = getattr(tool, "description", None)
+    if isinstance(d, str) and d.strip():
+        return d.strip()
+    func = getattr(tool, "func", None) or (tool if callable(tool) else None)
+    doc = getattr(func, "__doc__", None)
+    return doc.strip() if isinstance(doc, str) and doc.strip() else None
+
+
 def _tool_node(tool) -> dict:
     """A tool entry is either an AgentTool (wraps an agent -> recurse) or a leaf."""
     inner = getattr(tool, "agent", None)
@@ -131,17 +143,21 @@ def _tool_node(tool) -> dict:
         or getattr(tool, "__name__", None)
         or type(tool).__name__
     )
-    return {"kind": "tool", "name": name, "children": []}
+    return {"kind": "tool", "name": name,
+            "description": _tool_description(tool), "children": []}
 
 
 def build_agent_tree(agent) -> dict:
     """Walk an ADK Agent into a plain nested dict: sub_agents (transfer targets)
     and tools (functions / built-ins / AgentTool-wrapped agents)."""
+    instr = getattr(agent, "instruction", None)
     node = {
         "kind": "agent",
         "name": getattr(agent, "name", "?"),
         "model": _model_label(getattr(agent, "model", None)),
         "description": getattr(agent, "description", None),
+        # The system prompt — a str, or None when it's an InstructionProvider callable.
+        "instruction": instr if isinstance(instr, str) else None,
         "children": [],
     }
     for sub in getattr(agent, "sub_agents", None) or []:
